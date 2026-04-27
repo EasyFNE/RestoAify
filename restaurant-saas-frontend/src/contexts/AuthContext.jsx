@@ -1,18 +1,19 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { ids } from '../services/mockData.js'
+import { supabase } from '../services/supabaseClient.js'
 
-// Minimal auth context. In v1 we accept any login (mock), but the structure
-// supports plugging real Supabase auth later (`supabase.auth.signInWithPassword`).
+// Auth context.
+// - VITE_DATA_SOURCE=mock  → mock login (n'importe quel email/mdp fonctionne)
+// - VITE_DATA_SOURCE=supabase → vrai Supabase Auth (email + mdp réels requis)
 //
 // `currentUser` carries:
 //   - id, email, full_name
-//   - role: simplified role string used for menu filtering
-//          ('platform_admin' | 'tenant_owner' | 'tenant_admin' | 'manager' | ...)
+//   - role: 'platform_admin' | 'tenant_owner' | 'tenant_admin' | 'manager' | ...
 //   - scope: 'platform' | 'tenant'
 
 const AuthContext = createContext(null)
-
 const STORAGE_KEY = 'rsaas.auth.user'
+const USE_SUPABASE = import.meta.env.VITE_DATA_SOURCE === 'supabase'
 
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(() => {
@@ -24,7 +25,34 @@ export function AuthProvider({ children }) {
     }
   })
 
+  // ── Supabase : écoute les changements de session (login / logout / refresh)
   useEffect(() => {
+    if (!USE_SUPABASE || !supabase) return
+
+    // Récupère la session déjà active (refresh de page)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        _hydrateFromSupabase(session.user)
+      }
+    })
+
+    // Écoute les changements d'état (connexion, déconnexion, expiration)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session?.user) {
+          _hydrateFromSupabase(session.user)
+        } else {
+          setCurrentUser(null)
+          localStorage.removeItem(STORAGE_KEY)
+        }
+      }
+    )
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // ── Mock : persiste l'utilisateur dans localStorage
+  useEffect(() => {
+    if (USE_SUPABASE) return
     if (currentUser) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(currentUser))
     } else {
@@ -32,8 +60,38 @@ export function AuthProvider({ children }) {
     }
   }, [currentUser])
 
-  // Mock login: any email works. Email containing 'platform' becomes platform admin.
-  async function signIn({ email }) {
+  // Construit le currentUser depuis un user Supabase Auth
+  // Adapte cette fonction à ta logique réelle de rôles (ex: table user_roles)
+  function _hydrateFromSupabase(supaUser) {
+    const meta = supaUser.user_metadata || {}
+    const isPlatform = /platform/i.test(supaUser.email || '')
+    const user = {
+      id: supaUser.id,
+      email: supaUser.email,
+      full_name: meta.full_name || supaUser.email,
+      role: isPlatform ? 'platform_admin' : (meta.role || 'tenant_owner'),
+      scope: isPlatform ? 'platform' : 'tenant',
+      tenantId: meta.tenant_id || null,
+    }
+    setCurrentUser(user)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
+  }
+
+  // ── signIn
+  async function signIn({ email, password }) {
+    if (USE_SUPABASE) {
+      // Vrai login Supabase
+      if (!supabase) throw new Error('Supabase non configuré')
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+      if (error) throw error
+      // _hydrateFromSupabase sera appelé par onAuthStateChange
+      return data.user
+    }
+
+    // Mode mock : n'importe quel email/mdp fonctionne
     const isPlatform = /platform/i.test(email)
     const user = isPlatform
       ? {
@@ -56,8 +114,13 @@ export function AuthProvider({ children }) {
     return user
   }
 
-  function signOut() {
+  // ── signOut
+  async function signOut() {
+    if (USE_SUPABASE && supabase) {
+      await supabase.auth.signOut()
+    }
     setCurrentUser(null)
+    localStorage.removeItem(STORAGE_KEY)
   }
 
   return (
