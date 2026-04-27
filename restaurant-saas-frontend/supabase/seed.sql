@@ -1,11 +1,17 @@
 -- =============================================================================
 -- RestoAify — Seed de données factices
--- Correspond exactement à src/services/mockData.js
--- UUIDs corrigés : format hex strict (0-9, a-f) requis par PostgreSQL
--- Usage : Supabase Dashboard → SQL Editor → coller ce script → Run
+-- UUIDs : format hex strict uniquement (0-9, a-f)
+-- Usage : Supabase Dashboard → SQL Editor → Run
 -- =============================================================================
--- ⚠️  CE SCRIPT SUPPOSE QUE LES TABLES EXISTENT DÉJÀ.
--- =============================================================================
+
+-- ETAPE 0 : OPTIONNEL — Voir les contraintes CHECK sur chaque table
+-- Lance cette requête seule d'abord pour connaître les role_code autorisés :
+--
+-- SELECT cls.relname AS table_name, pg_get_constraintdef(pgc.oid) AS check_clause
+-- FROM pg_constraint pgc
+-- JOIN pg_class cls ON pgc.conrelid = cls.oid
+-- WHERE cls.relname IN ('tenant_users', 'restaurant_users')
+-- AND pgc.contype = 'c';
 
 SET session_replication_role = 'replica';
 
@@ -36,9 +42,7 @@ INSERT INTO tenants (id, name, slug, status, plan_id, created_at, updated_at) VA
 ON CONFLICT (id) DO NOTHING;
 
 -- -----------------------------------------------------------------------------
--- 3. USERS (table publique)
--- ⚠️  Si Supabase Auth est activé, remplace ces UUIDs par ceux générés
---     dans Authentication > Users après avoir créé les comptes.
+-- 3. USERS
 -- -----------------------------------------------------------------------------
 INSERT INTO users (id, email, full_name, status, created_at, updated_at) VALUES
   ('aaaaaaaa-0000-0000-0000-000000000001', 'admin@platform.io',  'Platform Admin', 'active', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z'),
@@ -76,11 +80,16 @@ ON CONFLICT (id) DO NOTHING;
 
 -- -----------------------------------------------------------------------------
 -- 5. TENANT_USERS
+-- ⚠️  Les role_code doivent correspondre exactement à ta CHECK constraint.
+--    Variantes courantes :
+--      'owner'        si la contrainte utilise des noms courts
+--      'tenant_owner' si la contrainte utilise des noms complets
+--    Lance d'abord la requête de diagnostic de l'étape 0 pour confirmer.
 -- -----------------------------------------------------------------------------
 INSERT INTO tenant_users (id, tenant_id, user_id, role_code, status, created_at) VALUES
-  ('dddddddd-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000002', 'tenant_owner', 'active', '2025-01-12T10:00:00Z'),
-  ('dddddddd-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000003', 'manager',      'active', '2025-01-13T10:00:00Z'),
-  ('dddddddd-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000004', 'kitchen',      'active', '2025-01-14T10:00:00Z')
+  ('dddddddd-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000002', 'owner',   'active', '2025-01-12T10:00:00Z'),
+  ('dddddddd-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000003', 'manager', 'active', '2025-01-13T10:00:00Z'),
+  ('dddddddd-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000004', 'kitchen', 'active', '2025-01-14T10:00:00Z')
 ON CONFLICT (id) DO NOTHING;
 
 -- -----------------------------------------------------------------------------
@@ -95,7 +104,6 @@ ON CONFLICT (id) DO NOTHING;
 -- 7. TENANT_ENTITLEMENTS
 -- -----------------------------------------------------------------------------
 INSERT INTO tenant_entitlements (id, tenant_id, module_code, feature_code, enabled, source, created_at, updated_at) VALUES
-  -- Le Spot (plan Pro)
   ('ffffffff-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'conversations', NULL, true,  'plan',     '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
   ('ffffffff-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'customers',     NULL, true,  'plan',     '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
   ('ffffffff-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'orders',        NULL, true,  'plan',     '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
@@ -103,7 +111,6 @@ INSERT INTO tenant_entitlements (id, tenant_id, module_code, feature_code, enabl
   ('ffffffff-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', 'catering',      NULL, false, 'plan',     '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
   ('ffffffff-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', 'healthy',       NULL, false, 'plan',     '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
   ('ffffffff-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'whatsapp',      NULL, true,  'override', '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
-  -- Oasis Healthy (plan Starter)
   ('ffffffff-0000-0000-0000-000000000008', '22222222-2222-2222-2222-222222222222', 'conversations', NULL, true,  'plan',     '2025-02-20T10:00:00Z', '2025-02-20T10:00:00Z'),
   ('ffffffff-0000-0000-0000-000000000009', '22222222-2222-2222-2222-222222222222', 'healthy',       NULL, true,  'plan',     '2025-02-20T10:00:00Z', '2025-02-20T10:00:00Z')
 ON CONFLICT (id) DO NOTHING;
@@ -130,7 +137,7 @@ ON CONFLICT (id) DO NOTHING;
 SET session_replication_role = 'origin';
 
 -- =============================================================================
--- Vérifie avec :
+-- Vérifications :
 --   SELECT COUNT(*) FROM plans;               -- 2
 --   SELECT COUNT(*) FROM tenants;             -- 2
 --   SELECT COUNT(*) FROM restaurants;         -- 3
