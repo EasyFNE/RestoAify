@@ -94,7 +94,6 @@ const mock = {
     if (!tenantId) throw new Error('tenantId requis')
     await sleep()
     const memberships = db.tenant_users.filter(tu => tu.tenant_id === tenantId)
-    // Join with users table for display
     return memberships.map(m => ({
       ...m,
       user: db.users.find(u => u.id === m.user_id) || null,
@@ -103,7 +102,10 @@ const mock = {
   async createTenantUser(tenantId, data) {
     if (!tenantId) throw new Error('tenantId requis')
     await sleep()
-    // 1. find or create the underlying user (global table)
+    // Rôles valides alignés sur la CHECK constraint DB
+    const VALID_ROLES = ['owner', 'admin', 'manager', 'member', 'viewer']
+    const role_code = VALID_ROLES.includes(data.role_code) ? data.role_code : 'member'
+    // 1. Trouver ou créer l'utilisateur (table globale)
     let user = db.users.find(u => u.email === data.email)
     if (!user) {
       user = {
@@ -116,12 +118,12 @@ const mock = {
       }
       db.users.push(user)
     }
-    // 2. link to tenant
+    // 2. Lier au tenant
     const link = {
       id: uid(),
       tenant_id: tenantId,
       user_id: user.id,
-      role_code: data.role_code || 'staff',
+      role_code,
       status: 'active',
       created_at: new Date().toISOString(),
     }
@@ -189,15 +191,16 @@ const mock = {
   async listAuditLogs(tenantId) {
     await sleep()
     if (tenantId) return db.audit_logs.filter(a => a.tenant_id === tenantId)
-    return [...db.audit_logs] // platform scope (caller must have rights)
+    return [...db.audit_logs]
   },
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// SUPABASE IMPLEMENTATION (stubs — to be fleshed out when backend ready)
+// SUPABASE IMPLEMENTATION
 // ─────────────────────────────────────────────────────────────────────────
 
 const sb = {
+  // ── Tenants
   async listTenants() {
     const { data, error } = await supabase.from('tenants').select('*').order('name')
     if (error) throw error
@@ -208,8 +211,100 @@ const sb = {
     if (error) throw error
     return data
   },
-  // TODO: implement remaining methods. Always pass tenantId in `.eq('tenant_id', tenantId)`
-  // and rely on RLS for defense in depth.
+
+  // ── Restaurants
+  async listRestaurants(tenantId) {
+    if (!tenantId) throw new Error('tenantId requis')
+    const { data, error } = await supabase
+      .from('restaurants')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('name')
+    if (error) throw error
+    return data
+  },
+  async getRestaurant(tenantId, id) {
+    if (!tenantId) throw new Error('tenantId requis')
+    const { data, error } = await supabase
+      .from('restaurants')
+      .select('*')
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  // ── Tenant users
+  async listTenantUsers(tenantId) {
+    if (!tenantId) throw new Error('tenantId requis')
+    const { data, error } = await supabase
+      .from('tenant_users')
+      .select('*, user:users(*)')
+      .eq('tenant_id', tenantId)
+      .order('created_at')
+    if (error) throw error
+    return data
+  },
+
+  // ── Créer un utilisateur via Edge Function sécurisée
+  // L'Edge Function `invite-user` utilise la service_role key côté serveur
+  // pour créer le compte dans auth.users puis dans public.users + tenant_users.
+  async createTenantUser(tenantId, data) {
+    if (!tenantId) throw new Error('tenantId requis')
+    const { data: result, error } = await supabase.functions.invoke('invite-user', {
+      body: {
+        tenant_id:  tenantId,
+        email:      data.email,
+        full_name:  data.full_name || data.email.split('@')[0],
+        role_code:  data.role_code || 'member',
+        password:   data.password,
+      },
+    })
+    if (error) throw error
+    if (result?.error) throw new Error(result.error)
+    return result.member
+  },
+
+  // ── Plans & entitlements
+  async listPlans() {
+    const { data, error } = await supabase.from('plans').select('*').order('name')
+    if (error) throw error
+    return data
+  },
+  async listEntitlements(tenantId) {
+    if (!tenantId) throw new Error('tenantId requis')
+    const { data, error } = await supabase
+      .from('tenant_entitlements')
+      .select('*')
+      .eq('tenant_id', tenantId)
+    if (error) throw error
+    return data
+  },
+
+  // ── Channels
+  async listChannels(tenantId) {
+    if (!tenantId) throw new Error('tenantId requis')
+    const { data, error } = await supabase
+      .from('channels')
+      .select('*')
+      .eq('tenant_id', tenantId)
+    if (error) throw error
+    return data
+  },
+
+  // ── Audit logs
+  async listAuditLogs(tenantId) {
+    const query = supabase
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100)
+    if (tenantId) query.eq('tenant_id', tenantId)
+    const { data, error } = await query
+    if (error) throw error
+    return data
+  },
 }
 
 // ─────────────────────────────────────────────────────────────────────────
