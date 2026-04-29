@@ -73,17 +73,22 @@ Replay (same `correlation_id` + same `tool_code`) returns the exact same envelop
 
 ## What's implemented in v1
 
-| Tool | Status |
-|------|--------|
-| `contacts.get_or_create` | ✅ |
-| `orders.create_draft` | ✅ |
-| `orders.confirm` | ✅ |
-| `orders.cancel` | ✅ |
-| `reservations.create` | ✅ |
-| `contacts.update_profile`, `contacts.get_profile` | ⏳ |
-| `orders.add_item`, `orders.remove_item`, `orders.get_status` | ⏳ |
-| `reservations.check_availability`, `reservations.update`, `reservations.cancel` | ⏳ |
-| `handoff.notify_staff` | ⏳ |
+| Module | Tool | Status |
+|--------|------|--------|
+| contacts | `contacts.get_or_create` | ✅ |
+| contacts | `contacts.get_profile` | ✅ |
+| contacts | `contacts.update_profile` | ✅ |
+| orders | `orders.create_draft` | ✅ |
+| orders | `orders.add_item` | ✅ |
+| orders | `orders.remove_item` | ✅ |
+| orders | `orders.confirm` | ✅ |
+| orders | `orders.cancel` | ✅ |
+| orders | `orders.get_status` | ✅ |
+| reservations | `reservations.check_availability` | ✅ |
+| reservations | `reservations.create` | ✅ |
+| reservations | `reservations.update` | ✅ |
+| reservations | `reservations.cancel` | ✅ |
+| handoff | `handoff.notify_staff` | ✅ |
 
 ## Architecture notes
 
