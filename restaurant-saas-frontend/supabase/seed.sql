@@ -17,38 +17,44 @@ SET session_replication_role = 'replica';
 
 -- -----------------------------------------------------------------------------
 -- 1. PLANS
+-- ON CONFLICT (code) pour éviter les doublons même si les IDs diffèrent
 -- -----------------------------------------------------------------------------
 INSERT INTO plans (id, code, name, status) VALUES
   ('00000000-0000-0000-0000-000000000001', 'starter', 'Starter', 'active'),
   ('00000000-0000-0000-0000-000000000002', 'pro',     'Pro',     'active')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (code) DO NOTHING;
 
 -- -----------------------------------------------------------------------------
 -- 2. TENANTS
+-- plan_id résolu par sous-requête sur code (robuste peu importe l'UUID du plan)
 -- -----------------------------------------------------------------------------
 INSERT INTO tenants (id, name, slug, status, plan_id, created_at, updated_at) VALUES
   (
     '11111111-1111-1111-1111-111111111111',
     'Le Spot', 'le-spot', 'active',
-    '00000000-0000-0000-0000-000000000002',
+    (SELECT id FROM plans WHERE code = 'pro'     LIMIT 1),
     '2025-01-12T10:00:00Z', '2025-03-01T10:00:00Z'
   ),
   (
     '22222222-2222-2222-2222-222222222222',
     'Oasis Healthy', 'oasis-healthy', 'active',
-    '00000000-0000-0000-0000-000000000001',
+    (SELECT id FROM plans WHERE code = 'starter' LIMIT 1),
     '2025-02-20T10:00:00Z', '2025-02-20T10:00:00Z'
   )
 ON CONFLICT (id) DO NOTHING;
 
 -- -----------------------------------------------------------------------------
 -- 3. USERS
+-- Inclut les users de test + le vrai compte Supabase Auth du développeur
+-- ⚠️  Remplace l'UUID et l'email ci-dessous par les tiens si besoin
 -- -----------------------------------------------------------------------------
 INSERT INTO users (id, email, full_name, status, created_at, updated_at) VALUES
-  ('aaaaaaaa-0000-0000-0000-000000000001', 'admin@platform.io',  'Platform Admin', 'active', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z'),
-  ('aaaaaaaa-0000-0000-0000-000000000002', 'owner@le-spot.ci',   'Awa Koné',       'active', '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
-  ('aaaaaaaa-0000-0000-0000-000000000003', 'manager@le-spot.ci', 'Yao N''Guessan', 'active', '2025-01-13T10:00:00Z', '2025-01-13T10:00:00Z'),
-  ('aaaaaaaa-0000-0000-0000-000000000004', 'cuisine@le-spot.ci', 'Marie Diomandé', 'active', '2025-01-14T10:00:00Z', '2025-01-14T10:00:00Z')
+  ('aaaaaaaa-0000-0000-0000-000000000001', 'admin@platform.io',    'Platform Admin', 'active', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z'),
+  ('aaaaaaaa-0000-0000-0000-000000000002', 'owner@le-spot.ci',     'Awa Koné',       'active', '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
+  ('aaaaaaaa-0000-0000-0000-000000000003', 'manager@le-spot.ci',   'Yao N''Guessan', 'active', '2025-01-13T10:00:00Z', '2025-01-13T10:00:00Z'),
+  ('aaaaaaaa-0000-0000-0000-000000000004', 'cuisine@le-spot.ci',   'Marie Diomandé', 'active', '2025-01-14T10:00:00Z', '2025-01-14T10:00:00Z'),
+  -- Compte réel du développeur (UID = UUID Supabase Auth)
+  ('b3a40529-af4a-4131-8699-c7f1682a98a7', 'yattarayman@gmail.com', 'Ayman Yattara', 'active', NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
 -- -----------------------------------------------------------------------------
@@ -80,16 +86,15 @@ ON CONFLICT (id) DO NOTHING;
 
 -- -----------------------------------------------------------------------------
 -- 5. TENANT_USERS
--- ⚠️  Les role_code doivent correspondre exactement à ta CHECK constraint.
---    Variantes courantes :
---      'owner'        si la contrainte utilise des noms courts
---      'tenant_owner' si la contrainte utilise des noms complets
---    Lance d'abord la requête de diagnostic de l'étape 0 pour confirmer.
+-- ✅ role_code corrigés : 'tenant_owner' au lieu de 'owner'
+--    Valeurs valides : tenant_owner | tenant_admin | manager | staff | kitchen
 -- -----------------------------------------------------------------------------
 INSERT INTO tenant_users (id, tenant_id, user_id, role_code, status, created_at) VALUES
-  ('dddddddd-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000002', 'owner',   'active', '2025-01-12T10:00:00Z'),
-  ('dddddddd-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000003', 'manager', 'active', '2025-01-13T10:00:00Z'),
-  ('dddddddd-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000004', 'kitchen', 'active', '2025-01-14T10:00:00Z')
+  ('dddddddd-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000002', 'tenant_owner', 'active', '2025-01-12T10:00:00Z'),
+  ('dddddddd-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000003', 'manager',      'active', '2025-01-13T10:00:00Z'),
+  ('dddddddd-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000004', 'kitchen',      'active', '2025-01-14T10:00:00Z'),
+  -- Compte réel du développeur → tenant_owner sur Le Spot
+  (gen_random_uuid(),                      '11111111-1111-1111-1111-111111111111', 'b3a40529-af4a-4131-8699-c7f1682a98a7', 'tenant_owner', 'active', NOW())
 ON CONFLICT (id) DO NOTHING;
 
 -- -----------------------------------------------------------------------------
@@ -105,12 +110,12 @@ ON CONFLICT (id) DO NOTHING;
 -- -----------------------------------------------------------------------------
 INSERT INTO tenant_entitlements (id, tenant_id, module_code, feature_code, enabled, source, created_at, updated_at) VALUES
   ('ffffffff-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'conversations', NULL, true,  'plan',     '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
-  ('ffffffff-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'customers',     NULL, true,  'plan',     '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
+  ('ffffffff-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'contacts',      NULL, true,  'plan',     '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
   ('ffffffff-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'orders',        NULL, true,  'plan',     '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
   ('ffffffff-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'reservations',  NULL, true,  'plan',     '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
   ('ffffffff-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', 'catering',      NULL, false, 'plan',     '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
   ('ffffffff-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', 'healthy',       NULL, false, 'plan',     '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
-  ('ffffffff-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'whatsapp',      NULL, true,  'override', '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
+  ('ffffffff-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'handoff',       NULL, true,  'override', '2025-01-12T10:00:00Z', '2025-01-12T10:00:00Z'),
   ('ffffffff-0000-0000-0000-000000000008', '22222222-2222-2222-2222-222222222222', 'conversations', NULL, true,  'plan',     '2025-02-20T10:00:00Z', '2025-02-20T10:00:00Z'),
   ('ffffffff-0000-0000-0000-000000000009', '22222222-2222-2222-2222-222222222222', 'healthy',       NULL, true,  'plan',     '2025-02-20T10:00:00Z', '2025-02-20T10:00:00Z')
 ON CONFLICT (id) DO NOTHING;
@@ -127,22 +132,22 @@ ON CONFLICT (id) DO NOTHING;
 -- 9. AUDIT_LOGS
 -- -----------------------------------------------------------------------------
 INSERT INTO audit_logs (id, tenant_id, restaurant_id, actor_type, actor_id, entity_type, entity_id, action, metadata, created_at) VALUES
-  ('22222222-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', NULL,                                   'user',   'aaaaaaaa-0000-0000-0000-000000000002', 'tenant',      '11111111-1111-1111-1111-111111111111',    'tenant.created',      '{}',                           '2025-01-12T10:00:00Z'),
-  ('22222222-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'bbbbbbbb-0000-0000-0000-000000000001', 'user',   'aaaaaaaa-0000-0000-0000-000000000002', 'restaurant',  'bbbbbbbb-0000-0000-0000-000000000001',    'restaurant.created',  '{}',                           '2025-01-12T11:00:00Z'),
-  ('22222222-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', NULL,                                   'user',   'aaaaaaaa-0000-0000-0000-000000000002', 'tenant_user', 'dddddddd-0000-0000-0000-000000000002',    'tenant_user.invited', '{"role_code": "manager"}',     '2025-01-13T09:30:00Z'),
-  ('22222222-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', NULL,                                   'user',   'aaaaaaaa-0000-0000-0000-000000000002', 'entitlement', 'ffffffff-0000-0000-0000-000000000003',    'entitlement.enabled', '{"module_code": "orders"}',    '2025-01-15T10:00:00Z'),
-  ('22222222-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', 'bbbbbbbb-0000-0000-0000-000000000001', 'system', NULL,                                  'channel',     '11111111-0000-0000-0000-000000000001',    'channel.connected',   '{"provider": "meta_cloud"}',  '2025-01-15T10:30:00Z')
+  ('22222222-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', NULL,                                   'user',   'aaaaaaaa-0000-0000-0000-000000000002', 'tenant',      '11111111-1111-1111-1111-111111111111', 'tenant.created',      '{}',                          '2025-01-12T10:00:00Z'),
+  ('22222222-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'bbbbbbbb-0000-0000-0000-000000000001', 'user',   'aaaaaaaa-0000-0000-0000-000000000002', 'restaurant',  'bbbbbbbb-0000-0000-0000-000000000001', 'restaurant.created',  '{}',                          '2025-01-12T11:00:00Z'),
+  ('22222222-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', NULL,                                   'user',   'aaaaaaaa-0000-0000-0000-000000000002', 'tenant_user', 'dddddddd-0000-0000-0000-000000000002', 'tenant_user.invited', '{"role_code": "manager"}',    '2025-01-13T09:30:00Z'),
+  ('22222222-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', NULL,                                   'user',   'aaaaaaaa-0000-0000-0000-000000000002', 'entitlement', 'ffffffff-0000-0000-0000-000000000003', 'entitlement.enabled', '{"module_code": "orders"}',   '2025-01-15T10:00:00Z'),
+  ('22222222-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', 'bbbbbbbb-0000-0000-0000-000000000001', 'system', NULL,                                  'channel',     '11111111-0000-0000-0000-000000000001', 'channel.connected',   '{"provider": "meta_cloud"}',  '2025-01-15T10:30:00Z')
 ON CONFLICT (id) DO NOTHING;
 
 SET session_replication_role = 'origin';
 
 -- =============================================================================
 -- Vérifications :
---   SELECT COUNT(*) FROM plans;               -- 2
+--   SELECT COUNT(*) FROM plans;               -- ≥ 2
 --   SELECT COUNT(*) FROM tenants;             -- 2
 --   SELECT COUNT(*) FROM restaurants;         -- 3
---   SELECT COUNT(*) FROM users;               -- 4
---   SELECT COUNT(*) FROM tenant_users;        -- 3
+--   SELECT COUNT(*) FROM users;               -- 5 (4 tests + 1 réel)
+--   SELECT COUNT(*) FROM tenant_users;        -- 4 (3 tests + 1 réel)
 --   SELECT COUNT(*) FROM restaurant_users;    -- 2
 --   SELECT COUNT(*) FROM tenant_entitlements; -- 9
 --   SELECT COUNT(*) FROM channels;            -- 2
