@@ -8,26 +8,25 @@ import { api } from '../../services/api.js'
 import { useTenant } from '../../hooks/useTenant.js'
 
 // Rôles alignés sur la CHECK constraint réelle de la DB
-// CHECK (role_code = ANY (ARRAY['owner','admin','manager','member','viewer']))
+// CHECK (role_code = ANY (ARRAY['tenant_owner','tenant_admin','manager','staff','kitchen']))
 const ROLE_OPTIONS = [
-  { value: 'owner',   label: 'Owner' },
-  { value: 'admin',   label: 'Admin' },
-  { value: 'manager', label: 'Manager' },
-  { value: 'member',  label: 'Member' },
-  { value: 'viewer',  label: 'Viewer' },
+  { value: 'tenant_admin', label: 'Admin' },
+  { value: 'manager',      label: 'Manager' },
+  { value: 'staff',        label: 'Staff' },
+  { value: 'kitchen',      label: 'Cuisine' },
 ]
 
-const EMPTY_FORM = { email: '', full_name: '', role_code: 'member', password: '' }
+const EMPTY_FORM = { email: '', full_name: '', role_code: 'staff' }
 
 export default function UsersPage() {
   const { currentTenantId } = useTenant()
-  const [members, setMembers]   = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [creating, setCreating] = useState(false)
+  const [members, setMembers]       = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [creating, setCreating]     = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError]       = useState(null)
-  const [success, setSuccess]   = useState(null)
-  const [form, setForm]         = useState(EMPTY_FORM)
+  const [error, setError]           = useState(null)
+  const [success, setSuccess]       = useState(null)
+  const [form, setForm]             = useState(EMPTY_FORM)
 
   useEffect(() => {
     if (!currentTenantId) return
@@ -47,15 +46,15 @@ export default function UsersPage() {
     e.preventDefault()
     setError(null)
     setSuccess(null)
-    if (!form.email || !form.password) {
-      setError('Email et mot de passe sont obligatoires.')
+    if (!form.email) {
+      setError("L'email est obligatoire.")
       return
     }
     setSubmitting(true)
     try {
       const m = await api.createTenantUser(currentTenantId, form)
       setMembers(prev => [...prev, m])
-      setSuccess(`Utilisateur ${form.email} créé avec succès.`)
+      setSuccess(`Invitation envoyée à ${form.email}. L'utilisateur recevra un email pour définir son mot de passe.`)
       setCreating(false)
       setForm(EMPTY_FORM)
     } catch (err) {
@@ -83,7 +82,6 @@ export default function UsersPage() {
         }
       />
 
-      {/* Bandeau succès */}
       {success && (
         <div className="mb-4 rounded-md bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800 flex justify-between">
           <span>{success}</span>
@@ -91,13 +89,15 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Formulaire de création */}
       {creating && (
         <form
           onSubmit={handleCreate}
           className="bg-white border border-gray-200 rounded-lg p-5 mb-5 shadow-sm"
         >
-          <h3 className="text-sm font-semibold text-gray-700 mb-4">Nouvel utilisateur</h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-1">Inviter un utilisateur</h3>
+          <p className="text-xs text-gray-500 mb-4">
+            Un email d'invitation sera envoyé. L'utilisateur définira lui-même son mot de passe.
+          </p>
 
           {error && (
             <div className="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -123,15 +123,6 @@ export default function UsersPage() {
               placeholder="Prénom Nom"
             />
             <FormField
-              label="Mot de passe temporaire *"
-              name="password"
-              type="password"
-              required
-              value={form.password}
-              onChange={handleField}
-              placeholder="Min. 8 caractères"
-            />
-            <FormField
               label="Rôle"
               name="role_code"
               as="select"
@@ -144,7 +135,7 @@ export default function UsersPage() {
           <div className="mt-4 flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={handleCancel}>Annuler</Button>
             <Button type="submit" disabled={submitting}>
-              {submitting ? 'Création…' : 'Créer le compte'}
+              {submitting ? 'Envoi en cours…' : "Envoyer l'invitation"}
             </Button>
           </div>
         </form>
@@ -159,20 +150,20 @@ export default function UsersPage() {
             header: 'Nom',
             render: r => <span className="font-medium text-gray-900">{r.user?.full_name || '—'}</span>,
           },
-          { key: 'email',      header: 'Email',    render: r => r.user?.email || '—' },
+          { key: 'email',     header: 'Email',   render: r => r.user?.email || '—' },
           {
             key: 'role_code',
             header: 'Rôle',
             render: r => (
               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 uppercase tracking-wide">
-                {r.role_code}
+                {ROLE_OPTIONS.find(o => o.value === r.role_code)?.label ?? r.role_code}
               </span>
             ),
           },
-          { key: 'status',     header: 'Statut',   render: r => <StatusBadge status={r.status} /> },
+          { key: 'status',    header: 'Statut',  render: r => <StatusBadge status={r.status} /> },
           {
             key: 'created_at',
-            header: 'Ajouté le',
+            header: 'Invité le',
             render: r => new Date(r.created_at).toLocaleDateString('fr-FR'),
           },
         ]}

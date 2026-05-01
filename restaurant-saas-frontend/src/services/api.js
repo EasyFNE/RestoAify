@@ -102,8 +102,9 @@ const mock = {
   async createTenantUser(tenantId, data) {
     if (!tenantId) throw new Error('tenantId requis')
     await sleep()
-    const VALID_ROLES = ['owner', 'admin', 'manager', 'member', 'viewer']
-    const role_code = VALID_ROLES.includes(data.role_code) ? data.role_code : 'member'
+    // Rôles alignés sur la DB
+    const VALID_ROLES = ['tenant_owner', 'tenant_admin', 'manager', 'staff', 'kitchen']
+    const role_code = VALID_ROLES.includes(data.role_code) ? data.role_code : 'staff'
     let user = db.users.find(u => u.email === data.email)
     if (!user) {
       user = {
@@ -276,16 +277,17 @@ const sb = {
     return data
   },
 
-  // ── Créer un utilisateur via Edge Function sécurisée
+  // Inviter via Edge Function sécurisée
+  // Crée dans auth.users + public.users + tenant_users
+  // L'utilisateur reçoit un email pour définir son mot de passe
   async createTenantUser(tenantId, data) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data: result, error } = await supabase.functions.invoke('invite-user', {
       body: {
-        tenant_id:  tenantId,
-        email:      data.email,
-        full_name:  data.full_name || data.email.split('@')[0],
-        role_code:  data.role_code || 'member',
-        password:   data.password,
+        tenant_id: tenantId,
+        email:     data.email,
+        full_name: data.full_name || data.email.split('@')[0],
+        role_code: data.role_code || 'staff',
       },
     })
     if (error) throw error
