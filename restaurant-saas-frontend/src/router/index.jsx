@@ -4,9 +4,10 @@ import AppLayout from '../layouts/AppLayout.jsx'
 import AuthLayout from '../layouts/AuthLayout.jsx'
 
 import LoginPage from '../pages/LoginPage.jsx'
+import RegisterPage from '../pages/RegisterPage.jsx'
+import SetPasswordPage from '../pages/SetPasswordPage.jsx'
 import NotFoundPage from '../pages/NotFoundPage.jsx'
 import ComingSoonPage from '../pages/ComingSoonPage.jsx'
-import SetPasswordPage from '../pages/SetPasswordPage.jsx'
 
 // Platform pages
 import PlatformDashboard from '../pages/platform/PlatformDashboard.jsx'
@@ -36,7 +37,7 @@ function Protected({ children, allowedScope }) {
   return children
 }
 
-// Root redirect: send to the right shell based on role
+// Root redirect
 function RootRedirect() {
   const { currentUser } = useAuth()
   if (!currentUser) return <Navigate to="/login" replace />
@@ -48,9 +49,10 @@ export default function AppRouter() {
     <Routes>
       <Route path="/" element={<RootRedirect />} />
 
-      {/* Auth — public routes */}
+      {/* Public auth routes */}
       <Route element={<AuthLayout />}>
         <Route path="/login"        element={<LoginPage />} />
+        <Route path="/register"     element={<RegisterPage />} />
         <Route path="/set-password" element={<SetPasswordPage />} />
       </Route>
 

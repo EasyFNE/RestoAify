@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth.js'
 import Button from '../components/Button.jsx'
 import FormField from '../components/FormField.jsx'
@@ -55,7 +55,14 @@ export default function LoginPage() {
         </Button>
       </form>
 
-      <p className="text-[11px] text-gray-400 text-center mt-6">
+      <p className="text-center text-xs text-gray-500 mt-4">
+        Pas encore de compte ?{' '}
+        <Link to="/register" className="text-brand-600 hover:underline font-medium">
+          S'enregistrer
+        </Link>
+      </p>
+
+      <p className="text-[11px] text-gray-400 text-center mt-4">
         Mode démo · authentification mockée
       </p>
     </div>
