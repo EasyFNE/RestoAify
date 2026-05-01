@@ -60,18 +60,33 @@ export function AuthProvider({ children }) {
     }
   }, [currentUser])
 
-  // Construit le currentUser depuis un user Supabase Auth
-  // Adapte cette fonction à ta logique réelle de rôles (ex: table user_roles)
-  function _hydrateFromSupabase(supaUser) {
+  // Construit le currentUser depuis un user Supabase Auth.
+  // Le tenant_id n'est pas dans user_metadata — on le récupère depuis
+  // tenant_users (la vraie source de vérité pour les appartenances tenant).
+  async function _hydrateFromSupabase(supaUser) {
     const meta = supaUser.user_metadata || {}
     const isPlatform = /platform/i.test(supaUser.email || '')
+
+    // Cherche le tenant actif dans tenant_users
+    let tenantId = meta.tenant_id || null
+    if (!isPlatform && !tenantId && supabase) {
+      const { data } = await supabase
+        .from('tenant_users')
+        .select('tenant_id')
+        .eq('user_id', supaUser.id)
+        .eq('status', 'active')
+        .limit(1)
+        .single()
+      tenantId = data?.tenant_id || null
+    }
+
     const user = {
       id: supaUser.id,
       email: supaUser.email,
       full_name: meta.full_name || supaUser.email,
       role: isPlatform ? 'platform_admin' : (meta.role || 'tenant_owner'),
       scope: isPlatform ? 'platform' : 'tenant',
-      tenantId: meta.tenant_id || null,
+      tenantId,
     }
     setCurrentUser(user)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
