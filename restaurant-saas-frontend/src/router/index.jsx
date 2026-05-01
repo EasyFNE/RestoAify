@@ -6,6 +6,7 @@ import AuthLayout from '../layouts/AuthLayout.jsx'
 import LoginPage from '../pages/LoginPage.jsx'
 import NotFoundPage from '../pages/NotFoundPage.jsx'
 import ComingSoonPage from '../pages/ComingSoonPage.jsx'
+import SetPasswordPage from '../pages/SetPasswordPage.jsx'
 
 // Platform pages
 import PlatformDashboard from '../pages/platform/PlatformDashboard.jsx'
@@ -30,7 +31,6 @@ function Protected({ children, allowedScope }) {
   const { currentUser } = useAuth()
   if (!currentUser) return <Navigate to="/login" replace />
   if (allowedScope && currentUser.scope !== allowedScope && currentUser.scope !== 'platform') {
-    // Platform users can navigate anywhere; tenant users blocked from /platform
     return <Navigate to="/app" replace />
   }
   return children
@@ -48,9 +48,10 @@ export default function AppRouter() {
     <Routes>
       <Route path="/" element={<RootRedirect />} />
 
-      {/* Auth */}
+      {/* Auth — public routes */}
       <Route element={<AuthLayout />}>
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/login"        element={<LoginPage />} />
+        <Route path="/set-password" element={<SetPasswordPage />} />
       </Route>
 
       {/* Platform scope */}
@@ -61,11 +62,11 @@ export default function AppRouter() {
           </Protected>
         }
       >
-        <Route path="/platform"            element={<PlatformDashboard />} />
-        <Route path="/platform/tenants"    element={<TenantsListPage />} />
+        <Route path="/platform"             element={<PlatformDashboard />} />
+        <Route path="/platform/tenants"     element={<TenantsListPage />} />
         <Route path="/platform/tenants/:id" element={<TenantDetailPage />} />
-        <Route path="/platform/settings"   element={<PlatformSettingsPage />} />
-        <Route path="/platform/audit"      element={<PlatformAuditPage />} />
+        <Route path="/platform/settings"    element={<PlatformSettingsPage />} />
+        <Route path="/platform/audit"       element={<PlatformAuditPage />} />
       </Route>
 
       {/* Tenant scope */}
@@ -76,7 +77,6 @@ export default function AppRouter() {
           </Protected>
         }
       >
-        {/* Active */}
         <Route path="/app"                       element={<TenantDashboard />} />
         <Route path="/app/tenant"                element={<MyTenantPage />} />
         <Route path="/app/restaurants"           element={<RestaurantsPage />} />
@@ -87,8 +87,6 @@ export default function AppRouter() {
         <Route path="/app/settings"              element={<SettingsPage />} />
         <Route path="/app/audit"                 element={<AuditPage />} />
 
-        {/* Reserved — all point to ComingSoon. To activate a module:
-            replace the element with the real page. */}
         <Route path="/app/conversations" element={<ComingSoonPage moduleKey="conversations" />} />
         <Route path="/app/customers"     element={<ComingSoonPage moduleKey="customers" />} />
         <Route path="/app/orders"        element={<ComingSoonPage moduleKey="orders" />} />
