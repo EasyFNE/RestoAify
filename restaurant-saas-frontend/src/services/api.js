@@ -265,6 +265,28 @@ const sb = {
     return result.member
   },
 
+  // ── Restaurant users (per-restaurant access)
+  async listRestaurantUsers(tenantId) {
+    if (!tenantId) throw new Error('tenantId requis')
+    const { data, error } = await supabase
+      .from('restaurant_users')
+      .select(`
+        id,
+        tenant_id,
+        restaurant_id,
+        user_id,
+        role_code,
+        status,
+        created_at,
+        user:users(id, email, full_name, status),
+        restaurant:restaurants(id, name, restaurant_type, status)
+      `)
+      .eq('tenant_id', tenantId)
+      .order('created_at')
+    if (error) throw error
+    return data
+  },
+
   // ── Plans & entitlements
   async listPlans() {
     const { data, error } = await supabase.from('plans').select('*').order('name')
