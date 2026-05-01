@@ -23,9 +23,9 @@ const uid = () =>
 
 const sleep = (ms = 120) => new Promise(r => setTimeout(r, ms))
 
-// ─────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────
 // MOCK IMPLEMENTATION
-// ─────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────
 
 const mock = {
   // ── Tenants (platform scope)
@@ -102,10 +102,8 @@ const mock = {
   async createTenantUser(tenantId, data) {
     if (!tenantId) throw new Error('tenantId requis')
     await sleep()
-    // Rôles valides alignés sur la CHECK constraint DB
     const VALID_ROLES = ['owner', 'admin', 'manager', 'member', 'viewer']
     const role_code = VALID_ROLES.includes(data.role_code) ? data.role_code : 'member'
-    // 1. Trouver ou créer l'utilisateur (table globale)
     let user = db.users.find(u => u.email === data.email)
     if (!user) {
       user = {
@@ -118,7 +116,6 @@ const mock = {
       }
       db.users.push(user)
     }
-    // 2. Lier au tenant
     const link = {
       id: uid(),
       tenant_id: tenantId,
@@ -195,9 +192,9 @@ const mock = {
   },
 }
 
-// ─────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────
 // SUPABASE IMPLEMENTATION
-// ─────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────
 
 const sb = {
   // ── Tenants
@@ -207,7 +204,11 @@ const sb = {
     return data
   },
   async getTenant(id) {
-    const { data, error } = await supabase.from('tenants').select('*').eq('id', id).single()
+    const { data, error } = await supabase
+      .from('tenants')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle()
     if (error) throw error
     return data
   },
@@ -230,7 +231,7 @@ const sb = {
       .select('*')
       .eq('id', id)
       .eq('tenant_id', tenantId)
-      .single()
+      .maybeSingle()
     if (error) throw error
     return data
   },
@@ -248,8 +249,6 @@ const sb = {
   },
 
   // ── Créer un utilisateur via Edge Function sécurisée
-  // L'Edge Function `invite-user` utilise la service_role key côté serveur
-  // pour créer le compte dans auth.users puis dans public.users + tenant_users.
   async createTenantUser(tenantId, data) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data: result, error } = await supabase.functions.invoke('invite-user', {
@@ -307,9 +306,9 @@ const sb = {
   },
 }
 
-// ─────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────
 // EXPORT — single object used by the rest of the app
-// ─────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────
 
 export const api = SOURCE === 'supabase'
   ? new Proxy(sb, {
