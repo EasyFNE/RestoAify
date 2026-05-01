@@ -63,11 +63,12 @@ export function AuthProvider({ children }) {
   // Construit le currentUser depuis un user Supabase Auth.
   // Le tenant_id n'est pas dans user_metadata — on le récupère depuis
   // tenant_users (la vraie source de vérité pour les appartenances tenant).
+  // On utilise maybeSingle() pour éviter le 406 si aucune ligne n'est trouvée.
+  // Prérequis RLS : policy "tenant_users_self_select" avec USING (user_id = auth.uid())
   async function _hydrateFromSupabase(supaUser) {
     const meta = supaUser.user_metadata || {}
     const isPlatform = /platform/i.test(supaUser.email || '')
 
-    // Cherche le tenant actif dans tenant_users
     let tenantId = meta.tenant_id || null
     if (!isPlatform && !tenantId && supabase) {
       const { data } = await supabase
@@ -76,7 +77,7 @@ export function AuthProvider({ children }) {
         .eq('user_id', supaUser.id)
         .eq('status', 'active')
         .limit(1)
-        .single()
+        .maybeSingle()
       tenantId = data?.tenant_id || null
     }
 
@@ -95,14 +96,12 @@ export function AuthProvider({ children }) {
   // ── signIn
   async function signIn({ email, password }) {
     if (USE_SUPABASE) {
-      // Vrai login Supabase
       if (!supabase) throw new Error('Supabase non configuré')
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
       if (error) throw error
-      // _hydrateFromSupabase sera appelé par onAuthStateChange
       return data.user
     }
 
