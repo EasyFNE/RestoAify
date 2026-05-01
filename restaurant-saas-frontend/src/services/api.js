@@ -140,6 +140,34 @@ const mock = {
         restaurant: db.restaurants.find(r => r.id === ru.restaurant_id) || null,
       }))
   },
+  async createRestaurantUser(tenantId, data) {
+    if (!tenantId) throw new Error('tenantId requis')
+    await sleep()
+    const VALID_ROLES = ['manager', 'staff', 'kitchen']
+    const role_code = VALID_ROLES.includes(data.role_code) ? data.role_code : 'staff'
+    const link = {
+      id: uid(),
+      tenant_id: tenantId,
+      restaurant_id: data.restaurant_id,
+      user_id: data.user_id,
+      role_code,
+      status: 'active',
+      created_at: new Date().toISOString(),
+    }
+    db.restaurant_users.push(link)
+    return {
+      ...link,
+      user: db.users.find(u => u.id === data.user_id) || null,
+      restaurant: db.restaurants.find(r => r.id === data.restaurant_id) || null,
+    }
+  },
+  async revokeRestaurantUser(tenantId, id) {
+    if (!tenantId) throw new Error('tenantId requis')
+    await sleep()
+    const idx = db.restaurant_users.findIndex(ru => ru.id === id && ru.tenant_id === tenantId)
+    if (idx === -1) throw new Error('Affectation introuvable')
+    db.restaurant_users.splice(idx, 1)
+  },
 
   // ── Plans & entitlements
   async listPlans() {
@@ -285,6 +313,43 @@ const sb = {
       .order('created_at')
     if (error) throw error
     return data
+  },
+  async createRestaurantUser(tenantId, data) {
+    if (!tenantId) throw new Error('tenantId requis')
+    const VALID_ROLES = ['manager', 'staff', 'kitchen']
+    const role_code = VALID_ROLES.includes(data.role_code) ? data.role_code : 'staff'
+    const { data: row, error } = await supabase
+      .from('restaurant_users')
+      .insert({
+        tenant_id:     tenantId,
+        restaurant_id: data.restaurant_id,
+        user_id:       data.user_id,
+        role_code,
+        status:        'active',
+      })
+      .select(`
+        id,
+        tenant_id,
+        restaurant_id,
+        user_id,
+        role_code,
+        status,
+        created_at,
+        user:users(id, email, full_name, status),
+        restaurant:restaurants(id, name, restaurant_type, status)
+      `)
+      .single()
+    if (error) throw error
+    return row
+  },
+  async revokeRestaurantUser(tenantId, id) {
+    if (!tenantId) throw new Error('tenantId requis')
+    const { error } = await supabase
+      .from('restaurant_users')
+      .delete()
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+    if (error) throw error
   },
 
   // ── Plans & entitlements
