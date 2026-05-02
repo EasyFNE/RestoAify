@@ -7,7 +7,7 @@ import FormField from '../../components/FormField.jsx';
 import StatusBadge from '../../components/StatusBadge.jsx';
 import { cn } from '../../lib/cn.js';
 import { useTenant } from '../../hooks/useTenant.js';
-import { useAuthContext } from '../../hooks/useAuthContext.js';
+import { useAuth } from '../../hooks/useAuth.js';
 import * as api from '../../services/api.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -394,7 +394,8 @@ function DisabledTabPlaceholder({ tab }) {
 
 export default function SettingsPage() {
   const { currentTenant, currentTenantId } = useTenant();
-  const { role } = useAuthContext();
+  const { currentUser } = useAuth();
+  const role = currentUser?.role ?? null;
 
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = searchParams.get('tab');
