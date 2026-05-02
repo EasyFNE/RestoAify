@@ -94,7 +94,7 @@ const DISABLED_TAB_META = {
   },
   integrations: {
     description:
-      'Intégrez des services tiers (CRM, ERP, caisse, logistique) pour synchroniser vos données avec l'écosystème existant.',
+      "Intégrez des services tiers (CRM, ERP, caisse, logistique) pour synchroniser vos données avec l'écosystème existant.",
     fields: [
       'Logiciel de caisse',
       'CRM externe',
@@ -125,7 +125,7 @@ const DISABLED_TAB_META = {
   },
   security: {
     description:
-      'Gérez les politiques de sécurité du tenant : durée de session, MFA, liste d'IP autorisées et révocation de comptes.',
+      "Gérez les politiques de sécurité du tenant : durée de session, MFA, liste d'IP autorisées et révocation de comptes.",
     fields: [
       'Durée de session',
       'Obligation MFA',
