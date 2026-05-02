@@ -88,6 +88,17 @@ const mock = {
     db.restaurants.push(restaurant)
     return restaurant
   },
+  async updateRestaurant(tenantId, id, patch) {
+    if (!tenantId) throw new Error('tenantId requis')
+    await sleep()
+    const r = db.restaurants.find(x => x.id === id && x.tenant_id === tenantId)
+    if (!r) throw new Error('Restaurant introuvable')
+    Object.assign(r, patch, { updated_at: new Date().toISOString() })
+    return r
+  },
+  async deactivateRestaurant(tenantId, id) {
+    return mock.updateRestaurant(tenantId, id, { status: 'inactive' })
+  },
 
   // ── Tenant users (staff)
   async listTenantUsers(tenantId) {
@@ -102,7 +113,6 @@ const mock = {
   async createTenantUser(tenantId, data) {
     if (!tenantId) throw new Error('tenantId requis')
     await sleep()
-    // Rôles alignés sur la DB
     const VALID_ROLES = ['tenant_owner', 'tenant_admin', 'manager', 'staff', 'kitchen']
     const role_code = VALID_ROLES.includes(data.role_code) ? data.role_code : 'staff'
     let user = db.users.find(u => u.email === data.email)
@@ -263,6 +273,39 @@ const sb = {
       .maybeSingle()
     if (error) throw error
     return data
+  },
+  async createRestaurant(tenantId, data) {
+    if (!tenantId) throw new Error('tenantId requis')
+    const { data: row, error } = await supabase
+      .from('restaurants')
+      .insert({
+        tenant_id:       tenantId,
+        name:            data.name,
+        restaurant_type: data.restaurant_type || 'restaurant',
+        timezone:        data.timezone || 'Africa/Abidjan',
+        currency:        data.currency || 'XOF',
+        address:         data.address || null,
+        status:          data.status || 'active',
+      })
+      .select('*')
+      .single()
+    if (error) throw error
+    return row
+  },
+  async updateRestaurant(tenantId, id, patch) {
+    if (!tenantId) throw new Error('tenantId requis')
+    const { data: row, error } = await supabase
+      .from('restaurants')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single()
+    if (error) throw error
+    return row
+  },
+  async deactivateRestaurant(tenantId, id) {
+    return sb.updateRestaurant(tenantId, id, { status: 'inactive' })
   },
 
   // ── Tenant users
