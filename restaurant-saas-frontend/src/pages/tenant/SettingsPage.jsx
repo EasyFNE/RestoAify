@@ -8,7 +8,7 @@ import StatusBadge from '../../components/StatusBadge.jsx';
 import { cn } from '../../lib/cn.js';
 import { useTenant } from '../../hooks/useTenant.js';
 import { useAuth } from '../../hooks/useAuth.js';
-import * as api from '../../services/api.js';
+import { api } from '../../services/api.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration des onglets
