@@ -24,6 +24,35 @@ const uid = () =>
 const sleep = (ms = 120) => new Promise(r => setTimeout(r, ms))
 
 // ───────────────────────────────────────────────────────────────────────────
+// MOCK : plan → modules catalogue
+// (mirror of the SQL seeds in add_plan_modules.sql, restricted to
+// module_codes valid against the DB CHECK in 02-data-model.md)
+// ───────────────────────────────────────────────────────────────────────────
+
+const MOCK_PLAN_MODULES_BY_CODE = {
+  starter: ['contacts', 'menus', 'orders', 'handoff'],
+  pro: ['contacts', 'menus', 'orders', 'handoff', 'reservations'],
+  enterprise: [
+    'contacts', 'menus', 'orders', 'handoff',
+    'reservations',
+    'catering', 'healthy', 'healthy_subscriptions',
+  ],
+}
+
+function mockPlanModulesFor(planId) {
+  const plan = db.plans.find(p => p.id === planId)
+  if (!plan) return []
+  const codes = MOCK_PLAN_MODULES_BY_CODE[plan.code] || []
+  return codes.map(code => ({
+    id: `pm-${plan.code}-${code}`,
+    plan_id: planId,
+    module_code: code,
+    included: true,
+    created_at: '2025-01-01T00:00:00Z',
+  }))
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // MOCK IMPLEMENTATION
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -185,11 +214,15 @@ const mock = {
     await sleep()
     return [...db.plans]
   },
+
   async listEntitlements(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     await sleep()
     return db.tenant_entitlements.filter(e => e.tenant_id === tenantId)
   },
+
+  // Toggle d'un module par un tenant_owner / tenant_admin depuis l'UI.
+  // Convention (doc 02) : source = 'override'.
   async setEntitlement(tenantId, moduleCode, enabled) {
     if (!tenantId) throw new Error('tenantId requis')
     await sleep()
@@ -198,8 +231,8 @@ const mock = {
     )
     if (e) {
       e.enabled = enabled
+      e.source = 'override'
       e.updated_at = new Date().toISOString()
-      e.source = 'admin'
     } else {
       e = {
         id: uid(),
@@ -207,13 +240,68 @@ const mock = {
         module_code: moduleCode,
         feature_code: null,
         enabled,
-        source: 'admin',
+        source: 'override',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }
       db.tenant_entitlements.push(e)
     }
+    // Audit (mirroring the SQL RPC behavior)
+    db.audit_logs.unshift({
+      id: uid(),
+      tenant_id: tenantId,
+      restaurant_id: null,
+      actor_type: 'user',
+      actor_id: null,
+      entity_type: 'entitlement',
+      entity_id: e.id,
+      action: enabled ? 'entitlement.enabled' : 'entitlement.disabled',
+      metadata: { module_code: moduleCode, source: 'override' },
+      created_at: new Date().toISOString(),
+    })
     return e
+  },
+
+  // ── Plan modules (commercial catalog)
+  async listPlanModules(planId) {
+    if (!planId) throw new Error('planId requis')
+    await sleep()
+    return mockPlanModulesFor(planId)
+  },
+
+  // Sync : propage le plan vers tenant_entitlements (source='plan'),
+  // sans toucher aux lignes 'override' / 'admin' / 'beta'.
+  async syncTenantEntitlements(tenantId) {
+    if (!tenantId) throw new Error('tenantId requis')
+    await sleep()
+    const tenant = db.tenants.find(t => t.id === tenantId)
+    if (!tenant?.plan_id) throw new Error('Tenant sans plan')
+    const planModules = mockPlanModulesFor(tenant.plan_id)
+    let count = 0
+    for (const pm of planModules) {
+      const existing = db.tenant_entitlements.find(
+        x => x.tenant_id === tenantId
+          && x.module_code === pm.module_code
+          && !x.feature_code,
+      )
+      if (!existing) {
+        db.tenant_entitlements.push({
+          id: uid(),
+          tenant_id: tenantId,
+          module_code: pm.module_code,
+          feature_code: null,
+          enabled: pm.included,
+          source: 'plan',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+      } else if (existing.source === 'plan') {
+        existing.enabled = pm.included
+        existing.updated_at = new Date().toISOString()
+      }
+      count += 1
+    }
+    return count
   },
 
   // ── Channels
@@ -248,6 +336,16 @@ const sb = {
       .select('*')
       .eq('id', id)
       .maybeSingle()
+    if (error) throw error
+    return data
+  },
+  async updateTenant(id, patch) {
+    const { data, error } = await supabase
+      .from('tenants')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('*')
+      .single()
     if (error) throw error
     return data
   },
@@ -321,8 +419,6 @@ const sb = {
   },
 
   // Inviter via Edge Function sécurisée
-  // Crée dans auth.users + public.users + tenant_users
-  // L'utilisateur reçoit un email pour définir son mot de passe
   async createTenantUser(tenantId, data) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data: result, error } = await supabase.functions.invoke('invite-user', {
@@ -338,7 +434,7 @@ const sb = {
     return result.member
   },
 
-  // ── Restaurant users (per-restaurant access)
+  // ── Restaurant users
   async listRestaurantUsers(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data, error } = await supabase
@@ -409,6 +505,41 @@ const sb = {
       .from('tenant_entitlements')
       .select('*')
       .eq('tenant_id', tenantId)
+    if (error) throw error
+    return data
+  },
+
+  // Toggle d'un module : passe par la RPC upsert_entitlement.
+  // La RPC vérifie auth.uid() + rôle, écrit source='override', log audit.
+  async setEntitlement(tenantId, moduleCode, enabled) {
+    if (!tenantId) throw new Error('tenantId requis')
+    const { data, error } = await supabase.rpc('upsert_entitlement', {
+      p_tenant_id:   tenantId,
+      p_module_code: moduleCode,
+      p_enabled:     enabled,
+    })
+    if (error) throw error
+    return data
+  },
+
+  // ── Plan modules (commercial catalog — read-only côté frontend)
+  async listPlanModules(planId) {
+    if (!planId) throw new Error('planId requis')
+    const { data, error } = await supabase
+      .from('plan_modules')
+      .select('id, plan_id, module_code, included, created_at')
+      .eq('plan_id', planId)
+      .order('module_code')
+    if (error) throw error
+    return data
+  },
+
+  // Sync explicite des entitlements depuis le plan.
+  async syncTenantEntitlements(tenantId) {
+    if (!tenantId) throw new Error('tenantId requis')
+    const { data, error } = await supabase.rpc('sync_tenant_entitlements', {
+      p_tenant_id: tenantId,
+    })
     if (error) throw error
     return data
   },
