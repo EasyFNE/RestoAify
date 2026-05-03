@@ -10,6 +10,7 @@ import { supabase } from '../services/supabaseClient.js'
 //   - id, email, full_name
 //   - role: 'platform_admin' | 'tenant_owner' | 'tenant_admin' | 'manager' | ...
 //   - scope: 'platform' | 'tenant'
+//   - tenantId: uuid (null pour platform users)
 
 const AuthContext = createContext(null)
 const STORAGE_KEY = 'rsaas.auth.user'
@@ -63,22 +64,31 @@ export function AuthProvider({ children }) {
   // Construit le currentUser depuis un user Supabase Auth.
   // Le tenant_id n'est pas dans user_metadata — on le récupère depuis
   // tenant_users (la vraie source de vérité pour les appartenances tenant).
-  // On utilise maybeSingle() pour éviter le 406 si aucune ligne n'est trouvée.
-  // Prérequis RLS : policy "tenant_users_self_select" avec USING (user_id = auth.uid())
+  // RLS requise : policy "tenant_users_self_select" avec USING (user_id = auth.uid())
   async function _hydrateFromSupabase(supaUser) {
     const meta = supaUser.user_metadata || {}
     const isPlatform = /platform/i.test(supaUser.email || '')
 
     let tenantId = meta.tenant_id || null
     if (!isPlatform && !tenantId && supabase) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('tenant_users')
         .select('tenant_id')
         .eq('user_id', supaUser.id)
         .eq('status', 'active')
         .limit(1)
         .maybeSingle()
+      if (error) {
+        console.error('[AuthContext] tenant_users lookup failed:', error.message)
+      }
       tenantId = data?.tenant_id || null
+      if (!tenantId && !isPlatform) {
+        console.warn(
+          '[AuthContext] tenantId est null après hydration Supabase.',
+          'Vérifiez que cet utilisateur a bien une entrée active dans tenant_users.',
+          { userId: supaUser.id, email: supaUser.email }
+        )
+      }
     }
 
     const user = {
