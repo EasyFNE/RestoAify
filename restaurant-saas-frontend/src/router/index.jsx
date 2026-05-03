@@ -27,6 +27,14 @@ import ModulesPage from '../pages/tenant/ModulesPage.jsx'
 import SettingsPage from '../pages/tenant/SettingsPage.jsx'
 import AuditPage from '../pages/tenant/AuditPage.jsx'
 
+// Operations pages (v1)
+import ConversationsPage from '../pages/tenant/ConversationsPage.jsx'
+import ConversationDetailPage from '../pages/tenant/ConversationDetailPage.jsx'
+import ContactsPage from '../pages/tenant/ContactsPage.jsx'
+import ContactDetailPage from '../pages/tenant/ContactDetailPage.jsx'
+import OrdersPage from '../pages/tenant/OrdersPage.jsx'
+import OrderDetailPage from '../pages/tenant/OrderDetailPage.jsx'
+
 // Route guard
 function Protected({ children, allowedScope }) {
   const { currentUser } = useAuth()
@@ -89,9 +97,15 @@ export default function AppRouter() {
         <Route path="/app/settings"              element={<SettingsPage />} />
         <Route path="/app/audit"                 element={<AuditPage />} />
 
-        <Route path="/app/conversations" element={<ComingSoonPage moduleKey="conversations" />} />
-        <Route path="/app/customers"     element={<ComingSoonPage moduleKey="customers" />} />
-        <Route path="/app/orders"        element={<ComingSoonPage moduleKey="orders" />} />
+        {/* Operations — v1 */}
+        <Route path="/app/conversations"       element={<ConversationsPage />} />
+        <Route path="/app/conversations/:id"   element={<ConversationDetailPage />} />
+        <Route path="/app/customers"           element={<ContactsPage />} />
+        <Route path="/app/customers/:id"       element={<ContactDetailPage />} />
+        <Route path="/app/orders"              element={<OrdersPage />} />
+        <Route path="/app/orders/:id"          element={<OrderDetailPage />} />
+
+        {/* Coming soon */}
         <Route path="/app/reservations"  element={<ComingSoonPage moduleKey="reservations" />} />
         <Route path="/app/catering"      element={<ComingSoonPage moduleKey="catering" />} />
         <Route path="/app/healthy"       element={<ComingSoonPage moduleKey="healthy" />} />
