@@ -1,24 +1,9 @@
 // =============================================================================
-// mockData.js — seed data for DEMO / TRIAL mode only.
+// mockData.js — seed data pour le mode MOCK / TRIAL / dev local.
 //
-// ⚠  This file is NOT active in production.
-//     It is only loaded when VITE_DATA_SOURCE=mock is explicitly set.
-//     In supabase mode (default) this module exports nothing useful
-//     and the `seed` export will throw if accidentally consumed.
-//
-// To use mock mode: set VITE_DATA_SOURCE=mock in your .env.local
+// Ce fichier est toujours complet. Le choix mock vs supabase se fait
+// dans api.js via VITE_DATA_SOURCE — pas ici.
 // =============================================================================
-
-const IS_MOCK = import.meta.env.VITE_DATA_SOURCE === 'mock'
-
-if (!IS_MOCK) {
-  // Guard: in supabase mode, nothing below should ever be imported.
-  // If you see this error, a component is incorrectly importing from mockData.
-  console.warn(
-    '[mockData] This file should not be loaded in supabase mode. ' +
-    'Check that no component imports directly from mockData.js.',
-  )
-}
 
 // ── Platform / tenant constants ──────────────────────────────────────────────
 const PLAN_STARTER    = 'plan-starter'
@@ -34,7 +19,7 @@ const USER_PLATFORM   = 'user-platform-1'
 const RESTO_LS_1 = 'resto-ls-plateau'
 const RESTO_LS_2 = 'resto-ls-cocody'
 
-// ── Operations constants ─────────────────────────────────────────────────
+// ── Operations constants ─────────────────────────────────────────────────────
 const CONTACT_AICHA  = 'cont-1'
 const CONTACT_KOUAME = 'cont-2'
 const CONTACT_FATOU  = 'cont-3'
@@ -51,7 +36,7 @@ const ORDER_YAO_CANCELLED    = 'ord-4'
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const seed = IS_MOCK ? {
+export const seed = {
   plans: [
     { id: PLAN_STARTER,    code: 'starter',    name: 'Starter',    status: 'active', created_at: '2025-01-01T00:00:00Z' },
     { id: PLAN_PRO,        code: 'pro',        name: 'Pro',        status: 'active', created_at: '2025-01-01T00:00:00Z' },
@@ -120,19 +105,19 @@ export const seed = IS_MOCK ? {
     { id: 'msg-7', tenant_id: TENANT_LE_SPOT, conversation_id: CONV_FATOU_HANDOFF, direction: 'outbound', message_type: 'text', provider_message_id: 'wa_009', raw_payload: {}, normalized_text: 'Madame Diallo, un responsable va vous contacter immédiatement.', created_at: '2025-04-30T08:45:00Z' },
   ],
   orders: [
-    { id: ORDER_AICHA_DRAFT,      tenant_id: TENANT_LE_SPOT, restaurant_id: RESTO_LS_1, contact_id: CONTACT_AICHA,  conversation_id: CONV_AICHA_ORDER, correlation_id: 'cor-aicha-2025-05-02-1',  order_number: 'LS-2025-00041', service_type: 'delivery', status: 'draft',        subtotal_amount: 7500, total_amount: 7500, items_count: 3, currency: 'XOF', requested_for: '2025-05-02T20:30:00Z', notes: 'Livraison au Plateau, étage 3.', created_at: '2025-05-02T19:35:00Z', updated_at: '2025-05-02T19:42:00Z' },
-    { id: ORDER_KOUAME_DELIVERED, tenant_id: TENANT_LE_SPOT, restaurant_id: RESTO_LS_2, contact_id: CONTACT_KOUAME, conversation_id: null,             correlation_id: 'cor-kouame-2025-04-25-1', order_number: 'LS-2025-00038', service_type: 'pickup',   status: 'delivered',    subtotal_amount: 5500, total_amount: 5500, items_count: 2, currency: 'XOF', requested_for: '2025-04-25T13:00:00Z', notes: null, created_at: '2025-04-25T11:50:00Z', updated_at: '2025-04-25T13:20:00Z' },
-    { id: ORDER_FATOU_PREP,       tenant_id: TENANT_LE_SPOT, restaurant_id: RESTO_LS_1, contact_id: CONTACT_FATOU,  conversation_id: null,             correlation_id: 'cor-fatou-2025-05-02-1',  order_number: 'LS-2025-00040', service_type: 'dine_in',  status: 'in_preparation', subtotal_amount: 9000, total_amount: 9000, items_count: 2, currency: 'XOF', requested_for: '2025-05-02T20:00:00Z', notes: '⚠ Allergie arachides', created_at: '2025-05-02T19:15:00Z', updated_at: '2025-05-02T19:50:00Z' },
-    { id: ORDER_YAO_CANCELLED,    tenant_id: TENANT_LE_SPOT, restaurant_id: RESTO_LS_1, contact_id: CONTACT_YAO,    conversation_id: null,             correlation_id: 'cor-yao-2025-04-12-1',    order_number: 'LS-2025-00033', service_type: 'delivery', status: 'cancelled',    subtotal_amount: 4000, total_amount: 4000, items_count: 1, currency: 'XOF', requested_for: null, notes: null, created_at: '2025-04-12T14:20:00Z', updated_at: '2025-04-12T14:35:00Z' },
+    { id: ORDER_AICHA_DRAFT,      tenant_id: TENANT_LE_SPOT, restaurant_id: RESTO_LS_1, contact_id: CONTACT_AICHA,  conversation_id: CONV_AICHA_ORDER, correlation_id: 'cor-aicha-2025-05-02-1',  order_number: 'LS-2025-00041', service_type: 'delivery', status: 'draft',           subtotal_amount: 7500, total_amount: 7500, items_count: 3, currency: 'XOF', requested_for: '2025-05-02T20:30:00Z', notes: 'Livraison au Plateau, étage 3.', created_at: '2025-05-02T19:35:00Z', updated_at: '2025-05-02T19:42:00Z' },
+    { id: ORDER_KOUAME_DELIVERED, tenant_id: TENANT_LE_SPOT, restaurant_id: RESTO_LS_2, contact_id: CONTACT_KOUAME, conversation_id: null,             correlation_id: 'cor-kouame-2025-04-25-1', order_number: 'LS-2025-00038', service_type: 'pickup',   status: 'delivered',       subtotal_amount: 5500, total_amount: 5500, items_count: 2, currency: 'XOF', requested_for: '2025-04-25T13:00:00Z', notes: null, created_at: '2025-04-25T11:50:00Z', updated_at: '2025-04-25T13:20:00Z' },
+    { id: ORDER_FATOU_PREP,       tenant_id: TENANT_LE_SPOT, restaurant_id: RESTO_LS_1, contact_id: CONTACT_FATOU,  conversation_id: null,             correlation_id: 'cor-fatou-2025-05-02-1',  order_number: 'LS-2025-00040', service_type: 'dine_in',  status: 'in_preparation',  subtotal_amount: 9000, total_amount: 9000, items_count: 2, currency: 'XOF', requested_for: '2025-05-02T20:00:00Z', notes: '⚠ Allergie arachides', created_at: '2025-05-02T19:15:00Z', updated_at: '2025-05-02T19:50:00Z' },
+    { id: ORDER_YAO_CANCELLED,    tenant_id: TENANT_LE_SPOT, restaurant_id: RESTO_LS_1, contact_id: CONTACT_YAO,    conversation_id: null,             correlation_id: 'cor-yao-2025-04-12-1',    order_number: 'LS-2025-00033', service_type: 'delivery', status: 'cancelled',       subtotal_amount: 4000, total_amount: 4000, items_count: 1, currency: 'XOF', requested_for: null, notes: null, created_at: '2025-04-12T14:20:00Z', updated_at: '2025-04-12T14:35:00Z' },
   ],
   order_items: [
-    { id: 'oi-1', tenant_id: TENANT_LE_SPOT, order_id: ORDER_AICHA_DRAFT,      qty: 2, unit_price: 3000, total_price: 6000, line_total: 6000, selected_option_ids: [], special_instructions: null,                        item_name_snapshot: 'Thieboudienne du jour',       selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
-    { id: 'oi-2', tenant_id: TENANT_LE_SPOT, order_id: ORDER_AICHA_DRAFT,      qty: 1, unit_price: 1500, total_price: 1500, line_total: 1500, selected_option_ids: [], special_instructions: null,                        item_name_snapshot: 'Alloco',                      selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
-    { id: 'oi-3', tenant_id: TENANT_LE_SPOT, order_id: ORDER_KOUAME_DELIVERED, qty: 1, unit_price: 3500, total_price: 3500, line_total: 3500, selected_option_ids: [], special_instructions: null,                        item_name_snapshot: 'Kedjenou de poulet',          selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
-    { id: 'oi-4', tenant_id: TENANT_LE_SPOT, order_id: ORDER_KOUAME_DELIVERED, qty: 1, unit_price: 2000, total_price: 2000, line_total: 2000, selected_option_ids: [], special_instructions: null,                        item_name_snapshot: 'Attiéké poisson',             selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
-    { id: 'oi-5', tenant_id: TENANT_LE_SPOT, order_id: ORDER_FATOU_PREP,       qty: 1, unit_price: 2500, total_price: 2500, line_total: 2500, selected_option_ids: [], special_instructions: 'Pas de sauce arachide',    item_name_snapshot: 'Garba',                       selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
-    { id: 'oi-6', tenant_id: TENANT_LE_SPOT, order_id: ORDER_FATOU_PREP,       qty: 1, unit_price: 6500, total_price: 6500, line_total: 6500, selected_option_ids: [], special_instructions: "⚠ vérifier absence d'arachides", item_name_snapshot: 'Plateau healthy poulet grillé',  selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
-    { id: 'oi-7', tenant_id: TENANT_LE_SPOT, order_id: ORDER_YAO_CANCELLED,    qty: 1, unit_price: 4000, total_price: 4000, line_total: 4000, selected_option_ids: [], special_instructions: null,                        item_name_snapshot: 'Thieboudienne royale',        selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
+    { id: 'oi-1', tenant_id: TENANT_LE_SPOT, order_id: ORDER_AICHA_DRAFT,      qty: 2, unit_price: 3000, total_price: 6000, line_total: 6000, selected_option_ids: [], special_instructions: null,                         item_name_snapshot: 'Thieboudienne du jour',      selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
+    { id: 'oi-2', tenant_id: TENANT_LE_SPOT, order_id: ORDER_AICHA_DRAFT,      qty: 1, unit_price: 1500, total_price: 1500, line_total: 1500, selected_option_ids: [], special_instructions: null,                         item_name_snapshot: 'Alloco',                     selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
+    { id: 'oi-3', tenant_id: TENANT_LE_SPOT, order_id: ORDER_KOUAME_DELIVERED, qty: 1, unit_price: 3500, total_price: 3500, line_total: 3500, selected_option_ids: [], special_instructions: null,                         item_name_snapshot: 'Kedjenou de poulet',         selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
+    { id: 'oi-4', tenant_id: TENANT_LE_SPOT, order_id: ORDER_KOUAME_DELIVERED, qty: 1, unit_price: 2000, total_price: 2000, line_total: 2000, selected_option_ids: [], special_instructions: null,                         item_name_snapshot: 'Attiéké poisson',            selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
+    { id: 'oi-5', tenant_id: TENANT_LE_SPOT, order_id: ORDER_FATOU_PREP,       qty: 1, unit_price: 2500, total_price: 2500, line_total: 2500, selected_option_ids: [], special_instructions: 'Pas de sauce arachide',     item_name_snapshot: 'Garba',                      selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
+    { id: 'oi-6', tenant_id: TENANT_LE_SPOT, order_id: ORDER_FATOU_PREP,       qty: 1, unit_price: 6500, total_price: 6500, line_total: 6500, selected_option_ids: [], special_instructions: "⚠ vérifier absence d'arachides", item_name_snapshot: 'Plateau healthy poulet grillé', selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
+    { id: 'oi-7', tenant_id: TENANT_LE_SPOT, order_id: ORDER_YAO_CANCELLED,    qty: 1, unit_price: 4000, total_price: 4000, line_total: 4000, selected_option_ids: [], special_instructions: null,                         item_name_snapshot: 'Thieboudienne royale',       selected_options_snapshot: null, menu_item_id: null, menu_item_variant_id: null },
   ],
   order_status_history: [
     { id: 'osh-1', tenant_id: TENANT_LE_SPOT, order_id: ORDER_KOUAME_DELIVERED, from_status: 'draft',                 to_status: 'awaiting_confirmation', actor_type: 'user', actor_id: USER_STAFF, reason: null,               created_at: '2025-04-25T11:52:00Z' },
@@ -145,5 +130,4 @@ export const seed = IS_MOCK ? {
     { id: 'osh-8', tenant_id: TENANT_LE_SPOT, order_id: ORDER_FATOU_PREP,       from_status: 'awaiting_confirmation', to_status: 'confirmed',             actor_type: 'user', actor_id: USER_STAFF, reason: null,               created_at: '2025-05-02T19:30:00Z' },
     { id: 'osh-9', tenant_id: TENANT_LE_SPOT, order_id: ORDER_FATOU_PREP,       from_status: 'confirmed',             to_status: 'in_preparation',        actor_type: 'user', actor_id: USER_STAFF, reason: null,               created_at: '2025-05-02T19:50:00Z' },
   ],
-} : {}
-// In supabase mode, seed is an empty object — never used.
+}
