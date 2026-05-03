@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { getMenuForScope } from '../config/menu.js'
 import { useAuth } from '../hooks/useAuth.js'
 import { cn } from '../lib/cn.js'
+import logoImg from '../assets/logo.jpg'
 
 export default function Sidebar({ scope }) {
   const { currentUser } = useAuth()
@@ -9,10 +10,17 @@ export default function Sidebar({ scope }) {
 
   return (
     <aside className="w-60 shrink-0 bg-gray-900 text-gray-200 flex flex-col">
-      <div className="px-4 py-4 border-b border-gray-800">
-        <div className="font-semibold text-white">Restaurant SaaS</div>
-        <div className="text-xs text-gray-400 mt-0.5">
-          {scope === 'platform' ? 'Platform Admin' : 'Tenant Admin'}
+      <div className="px-4 py-3 border-b border-gray-800 flex items-center gap-3">
+        <img
+          src={logoImg}
+          alt="RestoAify"
+          className="h-10 w-10 rounded-xl object-cover shrink-0"
+        />
+        <div className="min-w-0">
+          <div className="font-semibold text-white leading-tight">RestoAify</div>
+          <div className="text-xs text-gray-400 mt-0.5 truncate">
+            {scope === 'platform' ? 'Platform Admin' : 'Tenant Admin'}
+          </div>
         </div>
       </div>
 
@@ -59,7 +67,7 @@ export default function Sidebar({ scope }) {
       </nav>
 
       <div className="px-4 py-3 border-t border-gray-800 text-xs text-gray-500">
-        v0.1.0 · mock data
+        v0.1.0 · RestoAify
       </div>
     </aside>
   )

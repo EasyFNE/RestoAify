@@ -65,6 +65,9 @@ export function AuthProvider({ children }) {
   // Le tenant_id n'est pas dans user_metadata — on le récupère depuis
   // tenant_users (la vraie source de vérité pour les appartenances tenant).
   // RLS requise : policy "tenant_users_self_select" avec USING (user_id = auth.uid())
+  //
+  // FIX: retourne le user hydraté pour que signIn() puisse l'awaiter
+  // et le retourner à LoginPage avec scope correctement défini.
   async function _hydrateFromSupabase(supaUser) {
     const meta = supaUser.user_metadata || {}
     const isPlatform = /platform/i.test(supaUser.email || '')
@@ -101,6 +104,7 @@ export function AuthProvider({ children }) {
     }
     setCurrentUser(user)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
+    return user  // ← FIX: retourner le user hydraté
   }
 
   // ── signIn
@@ -112,7 +116,12 @@ export function AuthProvider({ children }) {
         password,
       })
       if (error) throw error
-      return data.user
+      // FIX: on await l'hydratation complète avant de retourner.
+      // Ainsi LoginPage reçoit un user avec .scope défini et
+      // currentUser est déjà positionné dans le state quand navigate() est appelé.
+      // onAuthStateChange déclenchera _hydrateFromSupabase une 2e fois (idempotent).
+      const hydratedUser = await _hydrateFromSupabase(data.user)
+      return hydratedUser
     }
 
     // Mode mock : n'importe quel email/mdp fonctionne
