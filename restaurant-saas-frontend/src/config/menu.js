@@ -1,82 +1,89 @@
 // Sidebar menu — SINGLE source of truth.
-// Each item has a `status` controlling visibility/interactivity:
+//
+// status:
 //   active   → fully implemented, navigates normally
-//   reserved → route exists, renders ComingSoonPage; shown grey + "Bientôt" badge
+//   reserved → route exists, renders ComingSoonPage. Visuellement identique
+//              à un item actif (plus de badge « Bientôt »). Le statut est
+//              conservé pour la sémantique interne et l’activation future.
 //   hidden   → not rendered in sidebar
 //
-// Each item declares which scope it belongs to (`platform` | `tenant`)
-// and which sidebar group it appears under. Roles/permissions are listed
-// for future RBAC enforcement (07-security-access.md).
+// scope: 'platform' | 'tenant'
+// roles: optional allowlist (future RBAC — 07-security-access.md)
 
 export const MENU = [
-  // ── PLATFORM SCOPE ────────────────────────────────────────────────────
+  // ── PLATFORM SCOPE ──────────────────────────────────────────────
   {
     section: 'platform',
     title: 'Platform Admin',
     scope: 'platform',
     items: [
-      { key: 'platform-dashboard', label: 'Dashboard',           path: '/platform',          status: 'active', roles: ['platform_admin', 'platform_support'] },
-      { key: 'platform-tenants',   label: 'Tenants',             path: '/platform/tenants',  status: 'active', roles: ['platform_admin', 'platform_support'] },
-      { key: 'platform-settings',  label: 'Paramètres plateforme', path: '/platform/settings', status: 'active', roles: ['platform_admin'] },
-      { key: 'platform-audit',     label: 'Audit',               path: '/platform/audit',    status: 'active', roles: ['platform_admin', 'platform_support'] },
+      { key: 'platform-dashboard', label: 'Dashboard',             path: '/platform',          status: 'active',   roles: ['platform_admin', 'platform_support'] },
+      { key: 'platform-tenants',   label: 'Tenants',               path: '/platform/tenants',  status: 'active',   roles: ['platform_admin', 'platform_support'] },
+      { key: 'platform-settings',  label: 'Paramètres plateforme', path: '/platform/settings', status: 'active',   roles: ['platform_admin'] },
+      { key: 'platform-audit',     label: 'Audit',                 path: '/platform/audit',    status: 'active',   roles: ['platform_admin', 'platform_support'] },
     ],
   },
 
-  // ── TENANT SCOPE ──────────────────────────────────────────────────────
+  // ── TENANT SCOPE ──────────────────────────────────────────────
+
+  // PRINCIPALE (ex-CORE)
   {
-    section: 'core',
-    title: 'Core',
+    section: 'principale',
+    title: 'Principale',
     scope: 'tenant',
     items: [
-      { key: 'tenant-dashboard',     label: 'Dashboard',          path: '/app',                    status: 'active' },
-      { key: 'tenant-info',          label: 'Mon tenant',         path: '/app/tenant',             status: 'active' },
-      { key: 'tenant-restaurants',   label: 'Restaurants',        path: '/app/restaurants',        status: 'active' },
-      { key: 'tenant-users',         label: 'Utilisateurs',       path: '/app/users',              status: 'active' },
-      { key: 'tenant-restaurant-access', label: 'Accès par restaurant', path: '/app/restaurant-access', status: 'active' },
-      { key: 'tenant-modules',       label: 'Modules',            path: '/app/modules',            status: 'active' },
-      { key: 'tenant-settings',      label: 'Paramètres',         path: '/app/settings',           status: 'active' },
-      { key: 'tenant-audit',         label: 'Audit',              path: '/app/audit',              status: 'active' },
+      { key: 'tenant-dashboard',    label: 'Dashboard',    path: '/app',           status: 'active' },
+      { key: 'tenant-info',         label: 'Mon tenant',   path: '/app/tenant',    status: 'active' },
+      { key: 'tenant-restaurants',  label: 'Restaurants',  path: '/app/restaurants', status: 'active' },
+      { key: 'tenant-audit',        label: 'Audit',        path: '/app/audit',     status: 'active' },
     ],
   },
 
-  // Reserved business modules — visible but disabled
+  // MODULES (ex-OPERATIONS) — modules métier + page d’activation des modules
   {
-    section: 'operations',
-    title: 'Operations',
+    section: 'modules',
+    title: 'Modules',
     scope: 'tenant',
     items: [
-      { key: 'mod-conversations', label: 'Conversations', path: '/app/conversations', status: 'reserved', module: 'conversations' },
-      { key: 'mod-customers',     label: 'Clients',       path: '/app/customers',     status: 'reserved', module: 'customers' },
-      { key: 'mod-orders',        label: 'Orders',        path: '/app/orders',        status: 'reserved', module: 'orders' },
-      { key: 'mod-reservations',  label: 'Reservations',  path: '/app/reservations',  status: 'reserved', module: 'reservations' },
-      { key: 'mod-catering',      label: 'Catering',      path: '/app/catering',      status: 'reserved', module: 'catering' },
-      { key: 'mod-healthy',       label: 'Healthy',       path: '/app/healthy',       status: 'reserved', module: 'healthy' },
+      { key: 'mod-conversations',  label: 'Conversations', path: '/app/conversations', status: 'reserved', module: 'conversations' },
+      { key: 'mod-customers',      label: 'Clients',       path: '/app/customers',      status: 'reserved', module: 'customers' },
+      { key: 'mod-orders',         label: 'Commandes',     path: '/app/orders',         status: 'reserved', module: 'orders' },
+      { key: 'mod-reservations',   label: 'Réservations',  path: '/app/reservations',   status: 'reserved', module: 'reservations' },
+      { key: 'mod-catering',       label: 'Traiteur',      path: '/app/catering',       status: 'reserved', module: 'catering' },
+      { key: 'mod-healthy',        label: 'Healthy',       path: '/app/healthy',        status: 'reserved', module: 'healthy' },
+      { key: 'tenant-modules',     label: 'Modules',       path: '/app/modules',        status: 'active' },
     ],
   },
 
+  // INTEGRATIONS
   {
     section: 'integrations',
-    title: 'Integrations',
+    title: 'Intégrations',
     scope: 'tenant',
     items: [
-      { key: 'int-channels',     label: 'Canaux',              path: '/app/channels',     status: 'reserved', module: 'channels' },
-      { key: 'int-whatsapp',     label: 'WhatsApp Cloud API',  path: '/app/whatsapp',     status: 'reserved', module: 'whatsapp' },
-      { key: 'int-integrations', label: 'Intégrations',        path: '/app/integrations', status: 'reserved', module: 'integrations' },
+      { key: 'int-channels',      label: 'Canaux',        path: '/app/channels',      status: 'reserved', module: 'channels' },
+      { key: 'int-whatsapp',      label: 'WhatsApp',      path: '/app/whatsapp',      status: 'reserved', module: 'whatsapp' },
+      { key: 'int-integrations',  label: 'Intégrations',  path: '/app/integrations',  status: 'reserved', module: 'integrations' },
     ],
   },
 
+  // PARAMETRES
   {
-    section: 'billing',
-    title: 'Future modules',
+    section: 'parametres',
+    title: 'Paramètres',
     scope: 'tenant',
     items: [
-      { key: 'fut-billing', label: 'Abonnement & Facturation', path: '/app/billing', status: 'reserved', module: 'billing' },
+      { key: 'tenant-users',             label: 'Utilisateurs',             path: '/app/users',             status: 'active' },
+      { key: 'tenant-restaurant-access', label: 'Accès par restaurant',     path: '/app/restaurant-access', status: 'active' },
+      { key: 'fut-billing',              label: 'Abonnement & Facturation',  path: '/app/billing',           status: 'reserved', module: 'billing' },
+      { key: 'tenant-settings',          label: 'Paramètres généraux',      path: '/app/settings',          status: 'active' },
     ],
   },
 ]
 
-// Helper: filter the menu for a given scope and user role / entitlements.
-// Hidden items are removed entirely; reserved items stay (rendered grey).
+// Helper : filtre le menu pour un scope et un rôle donnés.
+// Les items hidden sont supprimés ; les items reserved restent (visuellement
+// identiques aux items actifs — plus de badge « Bientôt »).
 export function getMenuForScope(scope, { role, entitlements } = {}) {
   return MENU
     .filter(g => g.scope === scope)
@@ -85,8 +92,8 @@ export function getMenuForScope(scope, { role, entitlements } = {}) {
       items: g.items.filter(i => {
         if (i.status === 'hidden') return false
         if (i.roles && role && !i.roles.includes(role)) return false
-        // Entitlement check is intentionally non-blocking for `reserved` items —
-        // we want to show them so users see what's coming.
+        // Entitlement check is intentionally non-blocking for reserved items —
+        // on les montre pour que les utilisateurs voient toute la surface produit.
         return true
       }),
     }))
