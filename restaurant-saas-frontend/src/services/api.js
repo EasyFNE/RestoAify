@@ -121,6 +121,41 @@ const mock = {
     return t
   },
 
+  // Plan change (étape 1 — sans paiement). Met à jour tenants.plan_id et
+  // écrit une ligne dans audit_logs (action 'tenant.plan_changed').
+  // Étape 2 : ce sera porté par un tool backend (tenants.update_plan)
+  // qui validera le paiement avant d'appliquer.
+  async updateTenantPlan(tenantId, planId, opts = {}) {
+    if (!tenantId || !planId) throw new Error('tenantId et planId requis')
+    await sleep()
+    const t = db.tenants.find(x => x.id === tenantId)
+    if (!t) throw new Error('Tenant introuvable')
+    const oldPlan = db.plans.find(p => p.id === t.plan_id) || null
+    const newPlan = db.plans.find(p => p.id === planId)
+    if (!newPlan) throw new Error('Plan inconnu')
+    t.plan_id = planId
+    t.updated_at = new Date().toISOString()
+    db.audit_logs.unshift({
+      id: uid(),
+      tenant_id: tenantId,
+      restaurant_id: null,
+      actor_type: 'user',
+      actor_id: opts.actorId || null,
+      entity_type: 'tenant',
+      entity_id: tenantId,
+      action: 'tenant.plan_changed',
+      metadata: {
+        from_plan_id:   oldPlan?.id   ?? null,
+        from_plan_code: oldPlan?.code ?? null,
+        to_plan_id:     newPlan.id,
+        to_plan_code:   newPlan.code,
+        reason:         opts.reason ?? null,
+      },
+      created_at: new Date().toISOString(),
+    })
+    return { ...t }
+  },
+
   // ── Restaurants (tenant scope)
   async listRestaurants(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
@@ -583,6 +618,49 @@ const sb = {
       .eq('id', id).select('*').single()
     if (error) throw error
     return data
+  },
+
+  // Plan change (étape 1 — sans paiement). Update tenants.plan_id +
+  // best-effort INSERT dans audit_logs. RLS doit autoriser l'owner à :
+  //   - UPDATE tenants WHERE id = current_tenant
+  //   - INSERT INTO audit_logs WHERE tenant_id = current_tenant
+  // Si la policy d'INSERT audit_logs n'est pas accordée, on log un warn
+  // mais on ne bloque pas le changement (l'audit sera complété par le
+  // tool backend en étape 2).
+  async updateTenantPlan(tenantId, planId, opts = {}) {
+    if (!tenantId || !planId) throw new Error('tenantId et planId requis')
+
+    const { data: tenant, error: e1 } = await supabase
+      .from('tenants')
+      .update({ plan_id: planId, updated_at: new Date().toISOString() })
+      .eq('id', tenantId)
+      .select()
+      .single()
+    if (e1) throw e1
+
+    try {
+      const { error: e2 } = await supabase.from('audit_logs').insert({
+        tenant_id:   tenantId,
+        actor_type:  'user',
+        actor_id:    opts.actorId ?? null,
+        entity_type: 'tenant',
+        entity_id:   tenantId,
+        action:      'tenant.plan_changed',
+        metadata: {
+          from_plan_id:   opts.fromPlan?.id   ?? null,
+          from_plan_code: opts.fromPlan?.code ?? null,
+          to_plan_id:     opts.toPlan?.id     ?? planId,
+          to_plan_code:   opts.toPlan?.code   ?? null,
+          reason:         opts.reason ?? null,
+        },
+      })
+      if (e2) throw e2
+    } catch (auditErr) {
+      // eslint-disable-next-line no-console
+      console.warn('audit_logs insert failed (RLS ou schéma) :', auditErr)
+    }
+
+    return tenant
   },
 
   // ── Restaurants

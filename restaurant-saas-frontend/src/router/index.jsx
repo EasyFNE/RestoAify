@@ -26,6 +26,7 @@ import RestaurantAccessPage from '../pages/tenant/RestaurantAccessPage.jsx'
 import ModulesPage from '../pages/tenant/ModulesPage.jsx'
 import SettingsPage from '../pages/tenant/SettingsPage.jsx'
 import AuditPage from '../pages/tenant/AuditPage.jsx'
+import BillingPage from '../pages/tenant/BillingPage.jsx'
 
 // Operations pages (v1)
 import ConversationsPage from '../pages/tenant/ConversationsPage.jsx'
@@ -94,6 +95,7 @@ export default function AppRouter() {
         <Route path="/app/users"                 element={<UsersPage />} />
         <Route path="/app/restaurant-access"     element={<RestaurantAccessPage />} />
         <Route path="/app/modules"               element={<ModulesPage />} />
+        <Route path="/app/billing"               element={<BillingPage />} />
         <Route path="/app/settings"              element={<SettingsPage />} />
         <Route path="/app/audit"                 element={<AuditPage />} />
 
@@ -112,7 +114,6 @@ export default function AppRouter() {
         <Route path="/app/channels"      element={<ComingSoonPage moduleKey="channels" />} />
         <Route path="/app/whatsapp"      element={<ComingSoonPage moduleKey="whatsapp" />} />
         <Route path="/app/integrations"  element={<ComingSoonPage moduleKey="integrations" />} />
-        <Route path="/app/billing"       element={<ComingSoonPage moduleKey="billing" />} />
       </Route>
 
       <Route path="*" element={<NotFoundPage />} />

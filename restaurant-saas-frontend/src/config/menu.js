@@ -3,8 +3,8 @@
 // status:
 //   active   → fully implemented, navigates normally
 //   reserved → route exists, renders ComingSoonPage. Visuellement identique
-//              à un item actif (plus de badge « Bientôt »). Le statut est
-//              conservé pour la sémantique interne et l’activation future.
+//              à un item actif (plus de badge « Bientôt »). Le statut est
+//              conservé pour la sémantique interne et l'activation future.
 //   hidden   → not rendered in sidebar
 //
 // scope: 'platform' | 'tenant'
@@ -32,14 +32,14 @@ export const MENU = [
     title: 'Principale',
     scope: 'tenant',
     items: [
-      { key: 'tenant-dashboard',    label: 'Dashboard',    path: '/app',           status: 'active' },
-      { key: 'tenant-info',         label: 'Mon tenant',   path: '/app/tenant',    status: 'active' },
+      { key: 'tenant-dashboard',    label: 'Dashboard',    path: '/app',             status: 'active' },
+      { key: 'tenant-info',         label: 'Mon tenant',   path: '/app/tenant',      status: 'active' },
       { key: 'tenant-restaurants',  label: 'Restaurants',  path: '/app/restaurants', status: 'active' },
-      { key: 'tenant-audit',        label: 'Audit',        path: '/app/audit',     status: 'active' },
+      { key: 'tenant-audit',        label: 'Audit',        path: '/app/audit',       status: 'active' },
     ],
   },
 
-  // MODULES (ex-OPERATIONS) — modules métier + page d’activation des modules
+  // MODULES (ex-OPERATIONS) — modules métier + page d'activation des modules
   {
     section: 'modules',
     title: 'Modules',
@@ -75,7 +75,7 @@ export const MENU = [
     items: [
       { key: 'tenant-users',             label: 'Utilisateurs',             path: '/app/users',             status: 'active' },
       { key: 'tenant-restaurant-access', label: 'Accès par restaurant',     path: '/app/restaurant-access', status: 'active' },
-      { key: 'fut-billing',              label: 'Abonnement & Facturation',  path: '/app/billing',           status: 'reserved', module: 'billing' },
+      { key: 'tenant-billing',           label: 'Abonnement & Facturation', path: '/app/billing',           status: 'active', module: 'billing' },
       { key: 'tenant-settings',          label: 'Paramètres généraux',      path: '/app/settings',          status: 'active' },
     ],
   },
@@ -83,7 +83,7 @@ export const MENU = [
 
 // Helper : filtre le menu pour un scope et un rôle donnés.
 // Les items hidden sont supprimés ; les items reserved restent (visuellement
-// identiques aux items actifs — plus de badge « Bientôt »).
+// identiques aux items actifs — plus de badge « Bientôt »).
 export function getMenuForScope(scope, { role, entitlements } = {}) {
   return MENU
     .filter(g => g.scope === scope)
@@ -92,7 +92,7 @@ export function getMenuForScope(scope, { role, entitlements } = {}) {
       items: g.items.filter(i => {
         if (i.status === 'hidden') return false
         if (i.roles && role && !i.roles.includes(role)) return false
-        // Entitlement check is intentionally non-blocking for reserved items —
+        // Entitlement check is intentionally non-blocking for reserved items —
         // on les montre pour que les utilisateurs voient toute la surface produit.
         return true
       }),
