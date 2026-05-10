@@ -2,17 +2,12 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { useAuthContext } from './AuthContext.jsx'
 import { api } from '../services/api.js'
 
-// TenantContext exposes the *currently active* tenant for tenant-scoped pages.
+// TenantContext — expose le tenant actif pour les pages tenant-scoped.
 //
-// Two cases:
-//   - tenant user: the tenant is fixed (their membership). currentTenantId
-//                  is forced to user.tenantId.
-//   - platform user: currentTenantId is selectable (e.g. via topbar / URL),
-//                    used when impersonating a tenant for support.
+// - user tenant  : currentTenantId fixé depuis user.tenantId
+// - user platform: currentTenantId sélectionnable (support / impersonation)
 //
-// IMPORTANT (multi-tenant rule from doc 01): when calling APIs from tenant
-// pages, ALWAYS pass currentTenantId. Components must never call
-// api.listRestaurants() without a tenantId.
+// RÈGLE multi-tenant (doc 01) : toujours passer currentTenantId aux appels API.
 
 const TenantContext = createContext(null)
 
@@ -21,8 +16,9 @@ export function TenantProvider({ children }) {
   const [currentTenantId, setCurrentTenantId] = useState(null)
   const [currentTenant, setCurrentTenant] = useState(null)
   const [entitlements, setEntitlements] = useState([])
+  const [tenantLoading, setTenantLoading] = useState(false)
+  const [tenantError, setTenantError] = useState(null)
 
-  // Initialize tenant id from logged user
   useEffect(() => {
     if (!currentUser) {
       setCurrentTenantId(null)
@@ -31,25 +27,35 @@ export function TenantProvider({ children }) {
     if (currentUser.scope === 'tenant') {
       setCurrentTenantId(currentUser.tenantId)
     }
-    // platform users start with no tenant; they pick one when navigating
   }, [currentUser])
 
-  // Load tenant + entitlements when id changes
   useEffect(() => {
     let cancelled = false
     async function load() {
       if (!currentTenantId) {
         setCurrentTenant(null)
         setEntitlements([])
+        setTenantError(null)
         return
       }
-      const [t, ents] = await Promise.all([
-        api.getTenant(currentTenantId),
-        api.listEntitlements(currentTenantId),
-      ])
-      if (cancelled) return
-      setCurrentTenant(t)
-      setEntitlements(ents)
+      setTenantLoading(true)
+      setTenantError(null)
+      try {
+        const [t, ents] = await Promise.all([
+          api.getTenant(currentTenantId),
+          api.listEntitlements(currentTenantId),
+        ])
+        if (cancelled) return
+        setCurrentTenant(t)
+        setEntitlements(Array.isArray(ents) ? ents : [])
+      } catch (err) {
+        if (!cancelled) {
+          console.error('[TenantContext] load error:', err)
+          setTenantError(err?.message || 'Erreur lors du chargement du tenant.')
+        }
+      } finally {
+        if (!cancelled) setTenantLoading(false)
+      }
     }
     load()
     return () => { cancelled = true }
@@ -65,6 +71,8 @@ export function TenantProvider({ children }) {
         currentTenantId,
         currentTenant,
         entitlements,
+        tenantLoading,
+        tenantError,
         setCurrentTenantId,
         isModuleEnabled,
       }}
@@ -74,8 +82,23 @@ export function TenantProvider({ children }) {
   )
 }
 
+// FIX #2 : retour safe au lieu de throw si hors Provider
+// Évite les pages blanches si un composant est rendu hors TenantProvider.
 export function useTenantContext() {
   const ctx = useContext(TenantContext)
-  if (!ctx) throw new Error('useTenantContext must be used within TenantProvider')
+  if (!ctx) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('useTenantContext appelé hors TenantProvider — valeurs par défaut retournées.')
+    }
+    return {
+      currentTenantId: null,
+      currentTenant: null,
+      entitlements: [],
+      tenantLoading: false,
+      tenantError: null,
+      setCurrentTenantId: () => {},
+      isModuleEnabled: () => false,
+    }
+  }
   return ctx
 }

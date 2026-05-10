@@ -4,14 +4,7 @@ import PageHeader from '../../components/PageHeader.jsx'
 import DataTable from '../../components/DataTable.jsx'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import { api } from '../../services/api.js'
-import { useTenant } from '../../hooks/useTenant.js'
-
-// Lists conversations for the current tenant.
-// Read-only in v1: conversations are created by the inbound n8n workflow,
-// not from the back-office.
-//
-// Aligned with 02-data-model §3.4. Status set covers the full conversation
-// state machine — see 06-lifecycle-status §7.
+import { useTenantContext } from '../../contexts/TenantContext.jsx'
 
 function formatRelative(iso) {
   if (!iso) return '—'
@@ -29,24 +22,41 @@ function contactDisplayName(contact) {
   if (!contact) return '—'
   return contact.full_name ||
     [contact.first_name, contact.last_name].filter(Boolean).join(' ') ||
-    contact.email ||
-    '—'
+    contact.email || '—'
 }
 
 export default function ConversationsPage() {
-  const { currentTenantId } = useTenant()
+  const { currentTenantId } = useTenantContext()
   const navigate = useNavigate()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [statusFilter, setStatusFilter] = useState('all')
 
   useEffect(() => {
-    if (!currentTenantId) return
+    // FIX #3 : guard tenant null — évite spinner infini
+    if (!currentTenantId) {
+      setLoading(false)
+      return
+    }
     let cancelled = false
     setLoading(true)
-    api.listConversations(currentTenantId).then(d => {
-      if (!cancelled) { setRows(d); setLoading(false) }
-    })
+    setError(null)
+    api.listConversations(currentTenantId)
+      .then(d => {
+        if (!cancelled) {
+          setRows(Array.isArray(d) ? d : [])
+          setLoading(false)
+        }
+      })
+      // FIX #1 : catch manquant — sans ça la page reste blanche
+      .catch(err => {
+        if (!cancelled) {
+          console.error('[ConversationsPage] listConversations error:', err)
+          setError(err?.message || 'Erreur lors du chargement des conversations.')
+          setLoading(false)
+        }
+      })
     return () => { cancelled = true }
   }, [currentTenantId])
 
@@ -94,11 +104,32 @@ export default function ConversationsPage() {
     },
   ]
 
+  if (error) {
+    return (
+      <div className="p-6">
+        <PageHeader title="Conversations" subtitle="Toutes les conversations du tenant" />
+        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700 text-sm">
+          <strong>Erreur de chargement :</strong> {error}
+        </div>
+      </div>
+    )
+  }
+
+  if (!currentTenantId && !loading) {
+    return (
+      <div className="p-6">
+        <PageHeader title="Conversations" subtitle="Toutes les conversations du tenant" />
+        <div className="mt-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-yellow-700 text-sm">
+          Aucun tenant sélectionné. Sélectionnez un tenant pour afficher ses conversations.
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="p-6 space-y-4">
       <PageHeader title="Conversations" subtitle="Toutes les conversations du tenant" />
 
-      {/* Status filter tabs */}
       <div className="flex gap-2 flex-wrap">
         {STATUS_TABS.map(tab => (
           <button

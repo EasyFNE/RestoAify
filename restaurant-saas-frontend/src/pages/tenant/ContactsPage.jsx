@@ -6,12 +6,7 @@ import StatusBadge from '../../components/StatusBadge.jsx'
 import Button from '../../components/Button.jsx'
 import FormField from '../../components/FormField.jsx'
 import { api } from '../../services/api.js'
-import { useTenant } from '../../hooks/useTenant.js'
-
-// Contacts = end customers of the tenant (02-data-model §3.1).
-// CRUD limited to create + update profile in v1.
-//
-// IMPORTANT (multi-tenant): every api call passes currentTenantId.
+import { useTenantContext } from '../../contexts/TenantContext.jsx'
 
 const EMPTY_FORM = {
   full_name: '', first_name: '', last_name: '',
@@ -32,22 +27,40 @@ function primaryChannelOf(contact) {
 }
 
 export default function ContactsPage() {
-  const { currentTenantId } = useTenant()
+  const { currentTenantId } = useTenantContext()
   const navigate = useNavigate()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState(null)
   const [creating, setCreating] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
 
   useEffect(() => {
-    if (!currentTenantId) return
+    // FIX #3 : guard tenant null — évite spinner infini
+    if (!currentTenantId) {
+      setLoading(false)
+      return
+    }
     let cancelled = false
     setLoading(true)
-    api.listContacts(currentTenantId).then(d => {
-      if (!cancelled) { setRows(d); setLoading(false) }
-    })
+    setFetchError(null)
+    api.listContacts(currentTenantId)
+      .then(d => {
+        if (!cancelled) {
+          setRows(Array.isArray(d) ? d : [])
+          setLoading(false)
+        }
+      })
+      // FIX #1 : catch manquant — sans ça la page reste blanche
+      .catch(err => {
+        if (!cancelled) {
+          console.error('[ContactsPage] listContacts error:', err)
+          setFetchError(err?.message || 'Erreur lors du chargement des clients.')
+          setLoading(false)
+        }
+      })
     return () => { cancelled = true }
   }, [currentTenantId])
 
@@ -66,7 +79,7 @@ export default function ContactsPage() {
     try {
       const created = await api.createContact(currentTenantId, form)
       const refreshed = await api.listContacts(currentTenantId)
-      setRows(refreshed)
+      setRows(Array.isArray(refreshed) ? refreshed : [])
       setCreating(false)
       setForm(EMPTY_FORM)
       if (created?.id) navigate(`/app/customers/${created.id}`)
@@ -93,6 +106,28 @@ export default function ContactsPage() {
     { key: 'status', label: 'Statut', render: v => <StatusBadge status={v} /> },
   ]
 
+  if (fetchError) {
+    return (
+      <div className="p-6">
+        <PageHeader title="Clients" subtitle="Base unifiée des contacts du tenant" />
+        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700 text-sm">
+          <strong>Erreur de chargement :</strong> {fetchError}
+        </div>
+      </div>
+    )
+  }
+
+  if (!currentTenantId && !loading) {
+    return (
+      <div className="p-6">
+        <PageHeader title="Clients" subtitle="Base unifiée des contacts du tenant" />
+        <div className="mt-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-yellow-700 text-sm">
+          Aucun tenant sélectionné. Sélectionnez un tenant pour afficher ses clients.
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="p-6 space-y-4">
       <PageHeader
@@ -103,7 +138,6 @@ export default function ContactsPage() {
         }
       />
 
-      {/* Create form */}
       {creating && (
         <div className="bg-white border rounded-xl p-5 shadow-sm">
           <h3 className="font-semibold text-gray-700 mb-4">Nouveau contact</h3>
