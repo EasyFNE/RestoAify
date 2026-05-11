@@ -26,7 +26,7 @@ function contactDisplayName(contact) {
 }
 
 export default function ConversationsPage() {
-  const { currentTenantId } = useTenantContext()
+  const { currentTenantId, isResolved } = useTenantContext()
   const navigate = useNavigate()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -34,7 +34,10 @@ export default function ConversationsPage() {
   const [statusFilter, setStatusFilter] = useState('all')
 
   useEffect(() => {
-    // FIX #3 : guard tenant null — évite spinner infini
+    // Attendre que TenantContext ait terminé son initialisation
+    // avant de décider si on charge ou non.
+    if (!isResolved) return
+
     if (!currentTenantId) {
       setLoading(false)
       return
@@ -49,7 +52,6 @@ export default function ConversationsPage() {
           setLoading(false)
         }
       })
-      // FIX #1 : catch manquant — sans ça la page reste blanche
       .catch(err => {
         if (!cancelled) {
           console.error('[ConversationsPage] listConversations error:', err)
@@ -58,7 +60,7 @@ export default function ConversationsPage() {
         }
       })
     return () => { cancelled = true }
-  }, [currentTenantId])
+  }, [currentTenantId, isResolved])
 
   const filtered = statusFilter === 'all'
     ? rows
@@ -115,7 +117,7 @@ export default function ConversationsPage() {
     )
   }
 
-  if (!currentTenantId && !loading) {
+  if (isResolved && !currentTenantId && !loading) {
     return (
       <div className="p-6">
         <PageHeader title="Conversations" subtitle="Toutes les conversations du tenant" />

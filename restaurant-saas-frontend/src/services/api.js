@@ -47,7 +47,21 @@ function isAllowedOrderTransition(from, to) {
   return ORDER_TRANSITIONS.some(([f, t]) => f === from && t === to)
 }
 
-function getActorForAudit() {
+// FIX: getActorForAudit est désormais async.
+// En mode Supabase, on récupère l'utilisateur depuis supabase.auth.getUser()
+// pour éviter une violation RLS sur audit_logs qui exige auth.uid() non null.
+// En mode mock, on retombe sur localStorage comme avant.
+async function getActorForAudit() {
+  if (SOURCE === 'supabase' && supabase) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user?.id) return { actor_type: 'user', actor_id: user.id }
+    } catch {
+      // silently fallback
+    }
+    return { actor_type: 'system', actor_id: null }
+  }
+  // mock : lecture localStorage
   try {
     const raw = localStorage.getItem('rsaas.auth.user')
     if (!raw) return { actor_type: 'system', actor_id: null }
@@ -458,7 +472,7 @@ const mock = {
         is_primary: true,
       })
     }
-    const actor = getActorForAudit()
+    const actor = await getActorForAudit()
     db.audit_logs.push({
       id: uid(),
       tenant_id: tenantId,
@@ -495,7 +509,7 @@ const mock = {
     if (changed.length === 0) return c
     const ts = new Date().toISOString()
     c.updated_at = ts
-    const actor = getActorForAudit()
+    const actor = await getActorForAudit()
     db.audit_logs.push({
       id: uid(),
       tenant_id: tenantId,
@@ -557,7 +571,7 @@ const mock = {
     const ts = new Date().toISOString()
     o.status = newStatus
     o.updated_at = ts
-    const actor = getActorForAudit()
+    const actor = await getActorForAudit()
     db.order_status_history.push({
       id: uid(),
       tenant_id: tenantId,
@@ -782,10 +796,9 @@ const sb = {
   },
 
   // ── [C] Conversations
-  // FIX : ambiguïté FK conversations→contacts résolue en passant par
-  // contact_id explicitement. On sélectionne le contact via la colonne
-  // contact_id plutôt qu'un embed auto, pour éviter l'erreur PostgREST
-  // "could not find relationship" quand plusieurs FK existent.
+  // FIX: FK hints explicites pour éviter l'erreur PostgREST
+  // "could not find relationship" quand plusieurs FK existent sur conversations.
+  // La syntaxe `table!fkey_name(...)` force PostgREST à utiliser la bonne FK.
   async listConversations(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data, error } = await supabase
@@ -793,8 +806,8 @@ const sb = {
       .select(`
         id, tenant_id, contact_id, channel_id, status, current_context_type,
         ai_enabled, handoff_reason, last_message_at, created_at, updated_at,
-        contact:contact_id(id, full_name, first_name, last_name, email),
-        channel:channel_id(id, channel_type, provider, external_channel_id)
+        contact:contacts!conversations_contact_id_fkey(id, full_name, first_name, last_name, email),
+        channel:channels!conversations_channel_id_fkey(id, channel_type, provider, external_channel_id)
       `)
       .eq('tenant_id', tenantId)
       .order('last_message_at', { ascending: false, nullsFirst: false })
@@ -808,8 +821,8 @@ const sb = {
       .select(`
         id, tenant_id, contact_id, channel_id, status, current_context_type,
         ai_enabled, handoff_reason, last_message_at, created_at, updated_at,
-        contact:contact_id(id, full_name, first_name, last_name, email, language),
-        channel:channel_id(id, channel_type, provider, external_channel_id)
+        contact:contacts!conversations_contact_id_fkey(id, full_name, first_name, last_name, email, language),
+        channel:channels!conversations_channel_id_fkey(id, channel_type, provider, external_channel_id)
       `)
       .eq('id', id)
       .eq('tenant_id', tenantId)
@@ -829,9 +842,8 @@ const sb = {
   },
 
   // ── [C] Contacts
-  // FIX : ambiguïté FK contacts→contact_channels résolue en utilisant
-  // la syntaxe `channels:contact_channels!contact_id(...)` qui force
-  // PostgREST à utiliser la FK contact_channels.contact_id → contacts.id.
+  // FIX: FK hint explicite `contact_channels!contact_channels_contact_id_fkey`
+  // pour que PostgREST utilise la bonne FK et ne retourne pas d'erreur d'ambiguïté.
   async listContacts(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data, error } = await supabase
@@ -839,7 +851,7 @@ const sb = {
       .select(`
         id, tenant_id, full_name, first_name, last_name, email,
         language, notes, status, merged_into_id, created_at, updated_at,
-        channels:contact_channels!contact_id(id, channel_type, channel_value, is_primary)
+        channels:contact_channels!contact_channels_contact_id_fkey(id, channel_type, channel_value, is_primary)
       `)
       .eq('tenant_id', tenantId)
       .neq('status', 'merged')
@@ -854,7 +866,7 @@ const sb = {
       .select(`
         id, tenant_id, full_name, first_name, last_name, email,
         language, notes, status, merged_into_id, created_at, updated_at,
-        channels:contact_channels!contact_id(id, channel_type, channel_value, is_primary)
+        channels:contact_channels!contact_channels_contact_id_fkey(id, channel_type, channel_value, is_primary)
       `)
       .eq('id', id)
       .eq('tenant_id', tenantId)
@@ -879,7 +891,7 @@ const sb = {
       })
       if (chErr) throw chErr
     }
-    const actor = getActorForAudit()
+    const actor = await getActorForAudit()
     await supabase.from('audit_logs').insert({
       tenant_id: tenantId, event_type: 'contact_created', module_code: 'contacts',
       tool_code: 'contacts.create', actor_type: actor.actor_type, actor_id: actor.actor_id,
@@ -898,7 +910,7 @@ const sb = {
     const { data: contact, error } = await supabase
       .from('contacts').update(cleanPatch).eq('id', id).eq('tenant_id', tenantId).select().single()
     if (error) throw error
-    const actor = getActorForAudit()
+    const actor = await getActorForAudit()
     await supabase.from('audit_logs').insert({
       tenant_id: tenantId, event_type: 'contact_profile_updated', module_code: 'contacts',
       tool_code: 'contacts.update_profile', actor_type: actor.actor_type, actor_id: actor.actor_id,
@@ -959,7 +971,7 @@ const sb = {
       .select().single()
     if (e2) throw e2
     if (!updated) throw new Error('Mise à jour concurrente détectée — réessayez.')
-    const actor = getActorForAudit()
+    const actor = await getActorForAudit()
     await supabase.from('order_status_history').insert({
       tenant_id: tenantId, order_id: id,
       from_status: current.status, to_status: newStatus,

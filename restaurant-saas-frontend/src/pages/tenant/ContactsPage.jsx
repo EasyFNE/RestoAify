@@ -27,7 +27,7 @@ function primaryChannelOf(contact) {
 }
 
 export default function ContactsPage() {
-  const { currentTenantId } = useTenantContext()
+  const { currentTenantId, isResolved } = useTenantContext()
   const navigate = useNavigate()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -38,7 +38,10 @@ export default function ContactsPage() {
   const [form, setForm] = useState(EMPTY_FORM)
 
   useEffect(() => {
-    // FIX #3 : guard tenant null — évite spinner infini
+    // Attendre que TenantContext ait terminé son initialisation
+    // avant de décider si on charge ou non.
+    if (!isResolved) return
+
     if (!currentTenantId) {
       setLoading(false)
       return
@@ -53,7 +56,6 @@ export default function ContactsPage() {
           setLoading(false)
         }
       })
-      // FIX #1 : catch manquant — sans ça la page reste blanche
       .catch(err => {
         if (!cancelled) {
           console.error('[ContactsPage] listContacts error:', err)
@@ -62,7 +64,7 @@ export default function ContactsPage() {
         }
       })
     return () => { cancelled = true }
-  }, [currentTenantId])
+  }, [currentTenantId, isResolved])
 
   function handleField(e) {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
@@ -117,7 +119,7 @@ export default function ContactsPage() {
     )
   }
 
-  if (!currentTenantId && !loading) {
+  if (isResolved && !currentTenantId && !loading) {
     return (
       <div className="p-6">
         <PageHeader title="Clients" subtitle="Base unifiée des contacts du tenant" />
