@@ -38,10 +38,7 @@ export default function ContactsPage() {
   const [form, setForm] = useState(EMPTY_FORM)
 
   useEffect(() => {
-    // Attendre que TenantContext ait terminé son initialisation
-    // avant de décider si on charge ou non.
     if (!isResolved) return
-
     if (!currentTenantId) {
       setLoading(false)
       return
@@ -92,20 +89,27 @@ export default function ContactsPage() {
     }
   }
 
+  // FIX: DataTable appelle col.render(row) avec un seul argument.
+  // Les colonnes qui ont besoin de l'objet entier (ex: row.channels)
+  // doivent utiliser (row) comme premier paramètre, pas (_, row).
   const columns = [
-    { key: 'full_name', label: 'Nom', render: (_, row) => contactDisplayName(row) },
+    {
+      key: 'full_name',
+      label: 'Nom',
+      render: (row) => contactDisplayName(row),
+    },
     {
       key: 'channel',
       label: 'Canal principal',
-      render: (_, row) => {
+      render: (row) => {
         const ch = primaryChannelOf(row)
         if (!ch) return '—'
         return `${ch.channel_type}: ${ch.channel_value}`
       },
     },
-    { key: 'email', label: 'Email', render: v => v ?? '—' },
-    { key: 'language', label: 'Langue', render: v => v ?? '—' },
-    { key: 'status', label: 'Statut', render: v => <StatusBadge status={v} /> },
+    { key: 'email', label: 'Email', render: (row) => row?.email ?? '—' },
+    { key: 'language', label: 'Langue', render: (row) => row?.language ?? '—' },
+    { key: 'status', label: 'Statut', render: (row) => <StatusBadge status={row?.status} /> },
   ]
 
   if (fetchError) {

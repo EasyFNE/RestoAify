@@ -34,10 +34,7 @@ export default function ConversationsPage() {
   const [statusFilter, setStatusFilter] = useState('all')
 
   useEffect(() => {
-    // Attendre que TenantContext ait terminé son initialisation
-    // avant de décider si on charge ou non.
     if (!isResolved) return
-
     if (!currentTenantId) {
       setLoading(false)
       return
@@ -78,31 +75,34 @@ export default function ConversationsPage() {
     { key: 'closed', label: 'Fermées', count: counts.closed || 0 },
   ]
 
+  // FIX: DataTable appelle col.render(row) avec un seul argument.
+  // Les colonnes qui ont besoin de l'objet entier (ex: row.contact)
+  // doivent utiliser (row) comme premier paramètre, pas (_, row).
   const columns = [
     {
       key: 'contact',
       label: 'Contact',
-      render: (_, row) => contactDisplayName(row.contact),
+      render: (row) => contactDisplayName(row?.contact),
     },
     {
       key: 'channel',
       label: 'Canal',
-      render: (_, row) => row.channel?.channel_type ?? '—',
+      render: (row) => row?.channel?.channel_type ?? '—',
     },
     {
       key: 'status',
       label: 'Statut',
-      render: (v) => <StatusBadge status={v} />,
+      render: (row) => <StatusBadge status={row?.status} />,
     },
     {
       key: 'current_context_type',
       label: 'Contexte',
-      render: (v) => v ?? '—',
+      render: (row) => row?.current_context_type ?? '—',
     },
     {
       key: 'last_message_at',
       label: 'Dernier message',
-      render: (v) => formatRelative(v),
+      render: (row) => formatRelative(row?.last_message_at),
     },
   ]
 
