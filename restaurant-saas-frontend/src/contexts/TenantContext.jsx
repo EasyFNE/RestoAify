@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { useAuthContext } from './AuthContext.jsx'
 import { api } from '../services/api.js'
 
@@ -13,8 +13,15 @@ import { api } from '../services/api.js'
 // sa phase d'initialisation. Les pages doivent attendre isResolved=true
 // avant de lancer un fetch, pour éviter de déclencher le guard
 // "!currentTenantId → setLoading(false)" trop tôt au premier render.
+//
+// FIX #2: timeout de sécurité (8s) — si currentUser reste null trop longtemps
+// (session expirée, refresh token lent, erreur réseau), on force isResolved=true
+// pour débloquer les pages plutôt que de rester en écran blanc indéfiniment.
 
 const TenantContext = createContext(null)
+
+// Durée max d'attente avant de forcer isResolved=true même sans currentUser.
+const RESOLVE_TIMEOUT_MS = 8_000
 
 export function TenantProvider({ children }) {
   const { currentUser } = useAuthContext()
@@ -27,10 +34,42 @@ export function TenantProvider({ children }) {
   // du tenant est terminé (qu'un tenant soit trouvé ou non).
   const [isResolved, setIsResolved] = useState(false)
 
+  // Ref pour annuler le timeout si currentUser se résout dans les temps.
+  const resolveTimerRef = useRef(null)
+
+  // ── Timeout de sécurité : si currentUser reste null après RESOLVE_TIMEOUT_MS,
+  // on force isResolved=true pour débloquer les pages (écran blanc).
+  useEffect(() => {
+    if (currentUser) {
+      // currentUser est là — annuler le timer de sécurité s'il tourne encore.
+      if (resolveTimerRef.current) {
+        clearTimeout(resolveTimerRef.current)
+        resolveTimerRef.current = null
+      }
+      return
+    }
+    // currentUser est null : on lance le timer de sécurité.
+    resolveTimerRef.current = setTimeout(() => {
+      console.warn(
+        `[TenantContext] currentUser toujours null après ${RESOLVE_TIMEOUT_MS}ms` +
+        ' — forçage isResolved=true pour débloquer les pages.'
+      )
+      setIsResolved(true)
+    }, RESOLVE_TIMEOUT_MS)
+
+    return () => {
+      if (resolveTimerRef.current) {
+        clearTimeout(resolveTimerRef.current)
+        resolveTimerRef.current = null
+      }
+    }
+  }, [currentUser])
+
   useEffect(() => {
     if (!currentUser) {
       setCurrentTenantId(null)
-      // Pas encore résolu si pas d'user — on attend que currentUser soit défini.
+      // Pas encore résolu si pas d'user — on attend que currentUser soit défini
+      // (ou que le timeout de sécurité se déclenche).
       setIsResolved(false)
       return
     }
