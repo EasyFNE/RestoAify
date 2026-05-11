@@ -424,6 +424,7 @@ const mock = {
       .filter(c => c.tenant_id === tenantId && c.status !== 'merged')
       .map(c => ({
         ...c,
+        // channels est toujours un tableau (jamais un objet brut)
         channels: db.contact_channels.filter(
           ch => ch.tenant_id === tenantId && ch.contact_id === c.id,
         ),
@@ -796,16 +797,20 @@ const sb = {
   },
 
   // ── [C] Conversations
-  // FIX: FK hints explicites pour éviter l'erreur PostgREST
+  // FIX: suppression des colonnes inexistantes ai_enabled et handoff_reason.
+  // Colonnes réelles : id, tenant_id, restaurant_id, contact_id, channel_id,
+  // status, current_context_type, current_context_id, last_message_at,
+  // created_at, updated_at.
+  // FK hints explicites pour éviter l'erreur PostgREST
   // "could not find relationship" quand plusieurs FK existent sur conversations.
-  // La syntaxe `table!fkey_name(...)` force PostgREST à utiliser la bonne FK.
   async listConversations(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data, error } = await supabase
       .from('conversations')
       .select(`
-        id, tenant_id, contact_id, channel_id, status, current_context_type,
-        ai_enabled, handoff_reason, last_message_at, created_at, updated_at,
+        id, tenant_id, restaurant_id, contact_id, channel_id, status,
+        current_context_type, current_context_id, last_message_at,
+        created_at, updated_at,
         contact:contacts!conversations_contact_id_fkey(id, full_name, first_name, last_name, email),
         channel:channels!conversations_channel_id_fkey(id, channel_type, provider, external_channel_id)
       `)
@@ -819,8 +824,9 @@ const sb = {
     const { data, error } = await supabase
       .from('conversations')
       .select(`
-        id, tenant_id, contact_id, channel_id, status, current_context_type,
-        ai_enabled, handoff_reason, last_message_at, created_at, updated_at,
+        id, tenant_id, restaurant_id, contact_id, channel_id, status,
+        current_context_type, current_context_id, last_message_at,
+        created_at, updated_at,
         contact:contacts!conversations_contact_id_fkey(id, full_name, first_name, last_name, email, language),
         channel:channels!conversations_channel_id_fkey(id, channel_type, provider, external_channel_id)
       `)
@@ -842,8 +848,8 @@ const sb = {
   },
 
   // ── [C] Contacts
-  // FIX: FK hint explicite `contact_channels!contact_channels_contact_id_fkey`
-  // pour que PostgREST utilise la bonne FK et ne retourne pas d'erreur d'ambiguïté.
+  // FIX: channels est garanti comme tableau grâce au fallback ?? [].
+  // FK hint explicite pour éviter l'ambiguïté PostgREST.
   async listContacts(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data, error } = await supabase
@@ -857,7 +863,8 @@ const sb = {
       .neq('status', 'merged')
       .order('updated_at', { ascending: false })
     if (error) throw error
-    return data ?? []
+    // Garantir que channels est toujours un tableau (jamais null / objet brut)
+    return (data ?? []).map(c => ({ ...c, channels: Array.isArray(c.channels) ? c.channels : [] }))
   },
   async getContact(tenantId, id) {
     if (!tenantId) throw new Error('tenantId requis')
@@ -872,7 +879,8 @@ const sb = {
       .eq('tenant_id', tenantId)
       .maybeSingle()
     if (error) throw error
-    return data
+    if (!data) return null
+    return { ...data, channels: Array.isArray(data.channels) ? data.channels : [] }
   },
   async createContact(tenantId, data) {
     if (!tenantId) throw new Error('tenantId requis')
