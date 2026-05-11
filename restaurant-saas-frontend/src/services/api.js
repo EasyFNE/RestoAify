@@ -121,10 +121,6 @@ const mock = {
     return t
   },
 
-  // Plan change (étape 1 — sans paiement). Met à jour tenants.plan_id et
-  // écrit une ligne dans audit_logs (action 'tenant.plan_changed').
-  // Étape 2 : ce sera porté par un tool backend (tenants.update_plan)
-  // qui validera le paiement avant d'appliquer.
   async updateTenantPlan(tenantId, planId, opts = {}) {
     if (!tenantId || !planId) throw new Error('tenantId et planId requis')
     await sleep()
@@ -373,7 +369,7 @@ const mock = {
     return [...db.audit_logs]
   },
 
-  // ── [B] Conversations ────────────────────────────────────────────────────
+  // ── [B] Conversations
   async listConversations(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     await sleep()
@@ -406,7 +402,7 @@ const mock = {
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
   },
 
-  // ── [B] Contacts ─────────────────────────────────────────────────────────
+  // ── [B] Contacts
   async listContacts(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     await sleep()
@@ -521,7 +517,7 @@ const mock = {
     return c
   },
 
-  // ── [B] Orders ───────────────────────────────────────────────────────────
+  // ── [B] Orders
   async listOrders(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     await sleep()
@@ -620,16 +616,8 @@ const sb = {
     return data
   },
 
-  // Plan change (étape 1 — sans paiement). Update tenants.plan_id +
-  // best-effort INSERT dans audit_logs. RLS doit autoriser l'owner à :
-  //   - UPDATE tenants WHERE id = current_tenant
-  //   - INSERT INTO audit_logs WHERE tenant_id = current_tenant
-  // Si la policy d'INSERT audit_logs n'est pas accordée, on log un warn
-  // mais on ne bloque pas le changement (l'audit sera complété par le
-  // tool backend en étape 2).
   async updateTenantPlan(tenantId, planId, opts = {}) {
     if (!tenantId || !planId) throw new Error('tenantId et planId requis')
-
     const { data: tenant, error: e1 } = await supabase
       .from('tenants')
       .update({ plan_id: planId, updated_at: new Date().toISOString() })
@@ -637,7 +625,6 @@ const sb = {
       .select()
       .single()
     if (e1) throw e1
-
     try {
       const { error: e2 } = await supabase.from('audit_logs').insert({
         tenant_id:   tenantId,
@@ -656,10 +643,8 @@ const sb = {
       })
       if (e2) throw e2
     } catch (auditErr) {
-      // eslint-disable-next-line no-console
       console.warn('audit_logs insert failed (RLS ou schéma) :', auditErr)
     }
-
     return tenant
   },
 
@@ -796,23 +781,39 @@ const sb = {
     return data
   },
 
-  // ── [C] Conversations ────────────────────────────────────────────────────
+  // ── [C] Conversations
+  // FIX : ambiguïté FK conversations→contacts résolue en passant par
+  // contact_id explicitement. On sélectionne le contact via la colonne
+  // contact_id plutôt qu'un embed auto, pour éviter l'erreur PostgREST
+  // "could not find relationship" quand plusieurs FK existent.
   async listConversations(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data, error } = await supabase
       .from('conversations')
-      .select(`*, contact:contacts(id, full_name, first_name, last_name, email), channel:channels(id, channel_type, provider, external_channel_id)`)
+      .select(`
+        id, tenant_id, contact_id, channel_id, status, current_context_type,
+        ai_enabled, handoff_reason, last_message_at, created_at, updated_at,
+        contact:contact_id(id, full_name, first_name, last_name, email),
+        channel:channel_id(id, channel_type, provider, external_channel_id)
+      `)
       .eq('tenant_id', tenantId)
       .order('last_message_at', { ascending: false, nullsFirst: false })
     if (error) throw error
-    return data
+    return data ?? []
   },
   async getConversation(tenantId, id) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data, error } = await supabase
       .from('conversations')
-      .select(`*, contact:contacts(id, full_name, first_name, last_name, email, language), channel:channels(id, channel_type, provider, external_channel_id)`)
-      .eq('id', id).eq('tenant_id', tenantId).maybeSingle()
+      .select(`
+        id, tenant_id, contact_id, channel_id, status, current_context_type,
+        ai_enabled, handoff_reason, last_message_at, created_at, updated_at,
+        contact:contact_id(id, full_name, first_name, last_name, email, language),
+        channel:channel_id(id, channel_type, provider, external_channel_id)
+      `)
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
     if (error) throw error
     return data
   },
@@ -824,26 +825,40 @@ const sb = {
       .eq('tenant_id', tenantId).eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
     if (error) throw error
-    return data
+    return data ?? []
   },
 
-  // ── [C] Contacts ─────────────────────────────────────────────────────────
+  // ── [C] Contacts
+  // FIX : ambiguïté FK contacts→contact_channels résolue en utilisant
+  // la syntaxe `channels:contact_channels!contact_id(...)` qui force
+  // PostgREST à utiliser la FK contact_channels.contact_id → contacts.id.
   async listContacts(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data, error } = await supabase
       .from('contacts')
-      .select(`*, channels:contact_channels(id, channel_type, channel_value, is_primary)`)
-      .eq('tenant_id', tenantId).neq('status', 'merged')
+      .select(`
+        id, tenant_id, full_name, first_name, last_name, email,
+        language, notes, status, merged_into_id, created_at, updated_at,
+        channels:contact_channels!contact_id(id, channel_type, channel_value, is_primary)
+      `)
+      .eq('tenant_id', tenantId)
+      .neq('status', 'merged')
       .order('updated_at', { ascending: false })
     if (error) throw error
-    return data
+    return data ?? []
   },
   async getContact(tenantId, id) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data, error } = await supabase
       .from('contacts')
-      .select(`*, channels:contact_channels(id, channel_type, channel_value, is_primary)`)
-      .eq('id', id).eq('tenant_id', tenantId).maybeSingle()
+      .select(`
+        id, tenant_id, full_name, first_name, last_name, email,
+        language, notes, status, merged_into_id, created_at, updated_at,
+        channels:contact_channels!contact_id(id, channel_type, channel_value, is_primary)
+      `)
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
     if (error) throw error
     return data
   },
@@ -894,22 +909,36 @@ const sb = {
     return contact
   },
 
-  // ── [C] Orders ───────────────────────────────────────────────────────────
+  // ── [C] Orders
   async listOrders(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data, error } = await supabase
       .from('orders')
-      .select(`*, contact:contacts(id, full_name, first_name, last_name), restaurant:restaurants(id, name)`)
-      .eq('tenant_id', tenantId).order('created_at', { ascending: false })
+      .select(`
+        id, tenant_id, contact_id, restaurant_id, status, order_number,
+        order_type, total_amount, currency, created_at, updated_at,
+        contact:contact_id(id, full_name, first_name, last_name),
+        restaurant:restaurant_id(id, name)
+      `)
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
     if (error) throw error
-    return data
+    return data ?? []
   },
   async getOrder(tenantId, id) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data, error } = await supabase
       .from('orders')
-      .select(`*, contact:contacts(id, full_name, first_name, last_name, email), restaurant:restaurants(id, name, currency), items:order_items(*), history:order_status_history(*)`)
-      .eq('id', id).eq('tenant_id', tenantId).maybeSingle()
+      .select(`
+        *,
+        contact:contact_id(id, full_name, first_name, last_name, email),
+        restaurant:restaurant_id(id, name, currency),
+        items:order_items(*),
+        history:order_status_history(*)
+      `)
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
     if (error) throw error
     if (data?.history) data.history.sort((a, b) => a.created_at.localeCompare(b.created_at))
     return data
