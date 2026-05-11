@@ -12,7 +12,14 @@ createRoot(document.getElementById('root')).render(
     {/* FIX #4 : ErrorBoundary global — attrape toute erreur non gérée
         et affiche un message lisible au lieu d'une page blanche */}
     <ErrorBoundary>
-      <BrowserRouter>
+      {/* FIX #5 : future flags React Router v7 — supprime les warnings de
+          dépréciation v7_startTransition et v7_relativeSplatPath */}
+      <BrowserRouter
+        future={{
+          v7_startTransition: true,
+          v7_relativeSplatPath: true,
+        }}
+      >
         <AuthProvider>
           <TenantProvider>
             <AppRouter />
