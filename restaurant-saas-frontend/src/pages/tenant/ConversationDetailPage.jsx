@@ -68,7 +68,12 @@ export default function ConversationDetailPage() {
       if (!c) setError('Conversation introuvable')
       else {
         setConv(c)
-        setMessages(msgs)
+        // Tri chronologique ASC : le message le plus ancien en premier,
+        // le plus récent en bas — comme dans WhatsApp.
+        const sorted = [...msgs].sort(
+          (a, b) => new Date(a.created_at) - new Date(b.created_at)
+        )
+        setMessages(sorted)
       }
       setLoading(false)
     }).catch(err => {
