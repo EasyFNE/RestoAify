@@ -16,20 +16,46 @@ import { supabase } from '../services/supabaseClient.js'
 // "Supabase est en train de vérifier la session" de "pas de session du tout".
 // Sans ce flag, TenantContext voit currentUser=null et déclenche son timer
 // de 8s, laissant les pages Conversations et Clients en écran blanc.
+//
+// FIX localStorage: toutes les lectures/écritures localStorage sont wrappées
+// dans un helper safeStorage qui absorbe silencieusement les SecurityError.
+// Dans un iframe sandboxé (preview Vite, certains navigateurs), localStorage
+// lève une exception qui crashe le composant et provoque une page blanche.
 
 const AuthContext = createContext(null)
 const STORAGE_KEY = 'rsaas.auth.user'
 const USE_SUPABASE = import.meta.env.VITE_DATA_SOURCE === 'supabase'
 
-export function AuthProvider({ children }) {
-  const [currentUser, setCurrentUser] = useState(() => {
+// ── Safe localStorage wrapper ─────────────────────────────────────────────────
+// Absorbe silencieusement les SecurityError / QuotaExceededError levées dans
+// les iframes sandboxées ou en navigation privée stricte.
+const safeStorage = {
+  get(key) {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY)
+      const raw = localStorage.getItem(key)
       return raw ? JSON.parse(raw) : null
     } catch {
       return null
     }
-  })
+  },
+  set(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value))
+    } catch {
+      // silently ignore
+    }
+  },
+  remove(key) {
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      // silently ignore
+    }
+  },
+}
+
+export function AuthProvider({ children }) {
+  const [currentUser, setCurrentUser] = useState(() => safeStorage.get(STORAGE_KEY))
 
   // authLoading : true uniquement en mode Supabase, pendant que getSession()
   // est en attente. Devient false dès que la session est connue (ou absente).
@@ -56,7 +82,7 @@ export function AuthProvider({ children }) {
           _hydrateFromSupabase(session.user)
         } else {
           setCurrentUser(null)
-          localStorage.removeItem(STORAGE_KEY)
+          safeStorage.remove(STORAGE_KEY)
         }
       }
     )
@@ -67,9 +93,9 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (USE_SUPABASE) return
     if (currentUser) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(currentUser))
+      safeStorage.set(STORAGE_KEY, currentUser)
     } else {
-      localStorage.removeItem(STORAGE_KEY)
+      safeStorage.remove(STORAGE_KEY)
     }
   }, [currentUser])
 
@@ -115,7 +141,7 @@ export function AuthProvider({ children }) {
       tenantId,
     }
     setCurrentUser(user)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
+    safeStorage.set(STORAGE_KEY, user)
     return user  // ← retourner le user hydraté
   }
 
@@ -165,7 +191,7 @@ export function AuthProvider({ children }) {
       await supabase.auth.signOut()
     }
     setCurrentUser(null)
-    localStorage.removeItem(STORAGE_KEY)
+    safeStorage.remove(STORAGE_KEY)
   }
 
   return (
