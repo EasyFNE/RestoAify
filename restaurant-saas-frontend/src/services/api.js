@@ -797,12 +797,11 @@ const sb = {
   },
 
   // ── [C] Conversations
-  // FIX: suppression des colonnes inexistantes ai_enabled et handoff_reason.
-  // Colonnes réelles : id, tenant_id, restaurant_id, contact_id, channel_id,
-  // status, current_context_type, current_context_id, last_message_at,
-  // created_at, updated_at.
-  // FK hints explicites pour éviter l'erreur PostgREST
-  // "could not find relationship" quand plusieurs FK existent sur conversations.
+  // FIX 1: suppression de `nullsFirst` (non supporté avant supabase-js v2.39+).
+  // FIX 2: FK hints retirés — PostgREST résout automatiquement si les FK
+  //         sont non ambiguës. Si une erreur "ambiguous" apparaît en prod,
+  //         remettre les hints après avoir vérifié les noms exacts dans Supabase
+  //         Dashboard > Table Editor > Foreign Keys.
   async listConversations(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data, error } = await supabase
@@ -811,11 +810,11 @@ const sb = {
         id, tenant_id, restaurant_id, contact_id, channel_id, status,
         current_context_type, current_context_id, last_message_at,
         created_at, updated_at,
-        contact:contacts!conversations_contact_id_fkey(id, full_name, first_name, last_name, email),
-        channel:channels!conversations_channel_id_fkey(id, channel_type, provider, external_channel_id)
+        contact:contacts(id, full_name, first_name, last_name, email),
+        channel:channels(id, channel_type, provider, external_channel_id)
       `)
       .eq('tenant_id', tenantId)
-      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .order('last_message_at', { ascending: false })
     if (error) throw error
     return data ?? []
   },
@@ -827,8 +826,8 @@ const sb = {
         id, tenant_id, restaurant_id, contact_id, channel_id, status,
         current_context_type, current_context_id, last_message_at,
         created_at, updated_at,
-        contact:contacts!conversations_contact_id_fkey(id, full_name, first_name, last_name, email, language),
-        channel:channels!conversations_channel_id_fkey(id, channel_type, provider, external_channel_id)
+        contact:contacts(id, full_name, first_name, last_name, email, language),
+        channel:channels(id, channel_type, provider, external_channel_id)
       `)
       .eq('id', id)
       .eq('tenant_id', tenantId)
@@ -848,8 +847,8 @@ const sb = {
   },
 
   // ── [C] Contacts
-  // FIX: channels est garanti comme tableau grâce au fallback ?? [].
-  // FK hint explicite pour éviter l'ambiguïté PostgREST.
+  // FIX 3: FK hint retiré sur contact_channels — même logique que conversations.
+  // Le fallback `Array.isArray` reste en place pour robustesse.
   async listContacts(tenantId) {
     if (!tenantId) throw new Error('tenantId requis')
     const { data, error } = await supabase
@@ -857,13 +856,12 @@ const sb = {
       .select(`
         id, tenant_id, full_name, first_name, last_name, email,
         language, notes, status, merged_into_id, created_at, updated_at,
-        channels:contact_channels!contact_channels_contact_id_fkey(id, channel_type, channel_value, is_primary)
+        channels:contact_channels(id, channel_type, channel_value, is_primary)
       `)
       .eq('tenant_id', tenantId)
       .neq('status', 'merged')
       .order('updated_at', { ascending: false })
     if (error) throw error
-    // Garantir que channels est toujours un tableau (jamais null / objet brut)
     return (data ?? []).map(c => ({ ...c, channels: Array.isArray(c.channels) ? c.channels : [] }))
   },
   async getContact(tenantId, id) {
@@ -873,7 +871,7 @@ const sb = {
       .select(`
         id, tenant_id, full_name, first_name, last_name, email,
         language, notes, status, merged_into_id, created_at, updated_at,
-        channels:contact_channels!contact_channels_contact_id_fkey(id, channel_type, channel_value, is_primary)
+        channels:contact_channels(id, channel_type, channel_value, is_primary)
       `)
       .eq('id', id)
       .eq('tenant_id', tenantId)
