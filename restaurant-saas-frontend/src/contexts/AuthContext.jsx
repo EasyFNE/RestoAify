@@ -11,6 +11,11 @@ import { supabase } from '../services/supabaseClient.js'
 //   - role: 'platform_admin' | 'tenant_owner' | 'tenant_admin' | 'manager' | ...
 //   - scope: 'platform' | 'tenant'
 //   - tenantId: uuid (null pour platform users)
+//
+// FIX: `authLoading` est exposé pour que TenantContext puisse distinguer
+// "Supabase est en train de vérifier la session" de "pas de session du tout".
+// Sans ce flag, TenantContext voit currentUser=null et déclenche son timer
+// de 8s, laissant les pages Conversations et Clients en écran blanc.
 
 const AuthContext = createContext(null)
 const STORAGE_KEY = 'rsaas.auth.user'
@@ -26,6 +31,11 @@ export function AuthProvider({ children }) {
     }
   })
 
+  // authLoading : true uniquement en mode Supabase, pendant que getSession()
+  // est en attente. Devient false dès que la session est connue (ou absente).
+  // En mode mock, on est toujours "résolu" donc false dès le départ.
+  const [authLoading, setAuthLoading] = useState(USE_SUPABASE)
+
   // ── Supabase : écoute les changements de session (login / logout / refresh)
   useEffect(() => {
     if (!USE_SUPABASE || !supabase) return
@@ -33,7 +43,9 @@ export function AuthProvider({ children }) {
     // Récupère la session déjà active (refresh de page)
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        _hydrateFromSupabase(session.user)
+        _hydrateFromSupabase(session.user).finally(() => setAuthLoading(false))
+      } else {
+        setAuthLoading(false)
       }
     })
 
@@ -104,7 +116,7 @@ export function AuthProvider({ children }) {
     }
     setCurrentUser(user)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
-    return user  // ← FIX: retourner le user hydraté
+    return user  // ← retourner le user hydraté
   }
 
   // ── signIn
@@ -157,7 +169,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ currentUser, signIn, signOut }}>
+    <AuthContext.Provider value={{ currentUser, authLoading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )

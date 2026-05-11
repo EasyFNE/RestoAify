@@ -9,22 +9,16 @@ import { api } from '../services/api.js'
 //
 // RÈGLE multi-tenant (doc 01) : toujours passer currentTenantId aux appels API.
 //
-// FIX: ajout de `isResolved` pour indiquer que le contexte a terminé
-// sa phase d'initialisation. Les pages doivent attendre isResolved=true
-// avant de lancer un fetch, pour éviter de déclencher le guard
-// "!currentTenantId → setLoading(false)" trop tôt au premier render.
-//
-// FIX #2: timeout de sécurité (8s) — si currentUser reste null trop longtemps
-// (session expirée, refresh token lent, erreur réseau), on force isResolved=true
-// pour débloquer les pages plutôt que de rester en écran blanc indéfiniment.
+// FIX: consomme `authLoading` depuis AuthContext pour ne pas démarrer
+// le cycle d'initialisation du tenant avant que Supabase ait rendu
+// son verdict sur la session courante. Cela supprime le besoin du
+// timer de sécurité de 8s qui était la cause principale des pages
+// blanches sur les modules Conversations et Clients.
 
 const TenantContext = createContext(null)
 
-// Durée max d'attente avant de forcer isResolved=true même sans currentUser.
-const RESOLVE_TIMEOUT_MS = 8_000
-
 export function TenantProvider({ children }) {
-  const { currentUser } = useAuthContext()
+  const { currentUser, authLoading } = useAuthContext()
   const [currentTenantId, setCurrentTenantId] = useState(null)
   const [currentTenant, setCurrentTenant] = useState(null)
   const [entitlements, setEntitlements] = useState([])
@@ -34,43 +28,18 @@ export function TenantProvider({ children }) {
   // du tenant est terminé (qu'un tenant soit trouvé ou non).
   const [isResolved, setIsResolved] = useState(false)
 
-  // Ref pour annuler le timeout si currentUser se résout dans les temps.
-  const resolveTimerRef = useRef(null)
-
-  // ── Timeout de sécurité : si currentUser reste null après RESOLVE_TIMEOUT_MS,
-  // on force isResolved=true pour débloquer les pages (écran blanc).
+  // ── Synchronisation tenantId depuis currentUser
+  // On attend que authLoading soit false avant de prendre une décision,
+  // pour éviter de traiter un currentUser=null transitoire comme une
+  // vraie absence de session.
   useEffect(() => {
-    if (currentUser) {
-      // currentUser est là — annuler le timer de sécurité s'il tourne encore.
-      if (resolveTimerRef.current) {
-        clearTimeout(resolveTimerRef.current)
-        resolveTimerRef.current = null
-      }
+    if (authLoading) {
+      // Supabase n'a pas encore rendu son verdict — on ne touche à rien.
       return
     }
-    // currentUser est null : on lance le timer de sécurité.
-    resolveTimerRef.current = setTimeout(() => {
-      console.warn(
-        `[TenantContext] currentUser toujours null après ${RESOLVE_TIMEOUT_MS}ms` +
-        ' — forçage isResolved=true pour débloquer les pages.'
-      )
-      setIsResolved(true)
-    }, RESOLVE_TIMEOUT_MS)
-
-    return () => {
-      if (resolveTimerRef.current) {
-        clearTimeout(resolveTimerRef.current)
-        resolveTimerRef.current = null
-      }
-    }
-  }, [currentUser])
-
-  useEffect(() => {
     if (!currentUser) {
       setCurrentTenantId(null)
-      // Pas encore résolu si pas d'user — on attend que currentUser soit défini
-      // (ou que le timeout de sécurité se déclenche).
-      setIsResolved(false)
+      setIsResolved(true)  // Pas de session → résolu immédiatement
       return
     }
     if (currentUser.scope === 'tenant') {
@@ -80,8 +49,9 @@ export function TenantProvider({ children }) {
       setCurrentTenantId(null)
       setIsResolved(true)
     }
-  }, [currentUser])
+  }, [currentUser, authLoading])
 
+  // ── Chargement du tenant et de ses entitlements
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -91,7 +61,7 @@ export function TenantProvider({ children }) {
         setTenantError(null)
         // Si currentUser est défini mais tenantId est null, le contexte
         // est quand même résolu (tenant introuvable ou platform user).
-        if (currentUser) setIsResolved(true)
+        if (currentUser && !authLoading) setIsResolved(true)
         return
       }
       setTenantLoading(true)
@@ -118,7 +88,7 @@ export function TenantProvider({ children }) {
     }
     load()
     return () => { cancelled = true }
-  }, [currentTenantId, currentUser])
+  }, [currentTenantId, currentUser, authLoading])
 
   function isModuleEnabled(moduleCode) {
     return entitlements.some(e => e.module_code === moduleCode && e.enabled)
@@ -142,7 +112,7 @@ export function TenantProvider({ children }) {
   )
 }
 
-// FIX #2 : retour safe au lieu de throw si hors Provider
+// FIX : retour safe au lieu de throw si hors Provider
 // Évite les pages blanches si un composant est rendu hors TenantProvider.
 export function useTenantContext() {
   const ctx = useContext(TenantContext)
