@@ -4,8 +4,8 @@
  * Fix 1 : currentUser.tenantId (camelCase)
  * Fix 2 : token via supabase.auth.getSession()
  * Fix 3 : FB.event.subscribe → window.addEventListener('message')
- * Fix 4 : FB.login n'accepte qu'un callback SYNCHRONE — la logique async
- *          est extraite dans handleLoginResponse() appelée via .then()
+ * Fix 4 : FB.login callback doit être synchrone
+ * Fix 5 : apostrophe typographique ' dans un string ' ' → backtick
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -34,7 +34,7 @@ function loadFacebookSdk(appId, version) {
   })
 }
 
-// ── Composant principal ────────────────────────────────────────────────────────
+// ── Composant principal ───────────────────────────────────────────────────────
 export default function WhatsAppPage() {
   const { currentUser } = useAuth()
   const tenantId = currentUser?.tenantId ?? null
@@ -48,10 +48,9 @@ export default function WhatsAppPage() {
   const [error, setError]                   = useState(null)
   const [success, setSuccess]               = useState(null)
 
-  // Données WABA reçues via postMessage de la popup Meta
   const sessionInfoRef = useRef(null)
 
-  // ── Résoudre le token Supabase ─────────────────────────────────────────────
+  // ── Token Supabase ─────────────────────────────────────────────────────────
   useEffect(() => {
     async function resolveToken() {
       if (!supabase) { setToken('mock-token'); setTokenReady(true); return }
@@ -68,7 +67,7 @@ export default function WhatsAppPage() {
     resolveToken()
   }, [])
 
-  // ── Charger le channel existant ────────────────────────────────────────────
+  // ── Channel existant ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!tokenReady || !token || !tenantId) { setLoadingChannel(false); return }
     setLoadingChannel(true)
@@ -81,7 +80,6 @@ export default function WhatsAppPage() {
   const isMetaConfigured = Boolean(META_APP_ID && META_CONFIG_ID)
 
   // ── Listener postMessage Meta ──────────────────────────────────────────────
-  // Meta envoie waba_id + phone_number_id via postMessage depuis la popup.
   useEffect(() => {
     function onMessage(event) {
       if (!event.origin.includes('facebook.com')) return
@@ -91,39 +89,38 @@ export default function WhatsAppPage() {
           const info = data?.data ?? {}
           if (info.waba_id || info.phone_number_id) {
             sessionInfoRef.current = info
-            console.debug('[WhatsApp] sessionInfo reçu (WA_EMBEDDED_SIGNUP):', info)
+            console.debug('[WhatsApp] sessionInfo recu (WA_EMBEDDED_SIGNUP):', info)
           }
         }
-        // Certaines versions Meta envoient waba_id au top level
         if (data?.waba_id && data?.phone_number_id) {
           sessionInfoRef.current = data
-          console.debug('[WhatsApp] sessionInfo reçu (direct):', data)
+          console.debug('[WhatsApp] sessionInfo recu (direct):', data)
         }
-      } catch (_) { /* message non-JSON, ignoré */ }
+      } catch (_) { /* non-JSON, ignore */ }
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
   }, [])
 
-  // ── Traitement async APRÈS le callback FB.login ────────────────────────────
-  // Séparé car FB.login n'accepte QUE des callbacks synchrones.
+  // ── Traitement async apres FB.login ────────────────────────────────────────
+  // Separe car FB.login n'accepte QUE des callbacks synchrones.
   async function handleLoginResponse(response) {
     if (response.status !== 'connected' || !response.authResponse?.code) {
-      setError('Connexion annulée ou refusée par Meta.')
+      setError('Connexion annulee ou refusee par Meta.')
       setConnecting(false)
       return
     }
 
     const code = response.authResponse.code
 
-    // Attendre jusqu'à 500 ms que le postMessage sessionInfo arrive
+    // Attendre que le postMessage sessionInfo arrive depuis la popup Meta
     await new Promise(r => setTimeout(r, 500))
     const sessionInfo = sessionInfoRef.current
 
     if (!sessionInfo?.waba_id || !sessionInfo?.phone_number_id) {
       setError(
-        'Informations WABA manquantes (waba_id / phone_number_id). ' +
-        'Assurez-vous d'avoir complété toutes les étapes du flux Meta.'
+        `Informations WABA manquantes (waba_id / phone_number_id). ` +
+        `Assurez-vous d'avoir complete toutes les etapes du flux Meta.`
       )
       setConnecting(false)
       return
@@ -147,7 +144,7 @@ export default function WhatsAppPage() {
           verified_phone_number: res.data.verified_phone_number,
           connected_at:          new Date().toISOString(),
         })
-        setSuccess('Numéro WhatsApp Business connecté avec succès !')
+        setSuccess('Numero WhatsApp Business connecte avec succes !')
       } else {
         setError(res.error?.message || 'Erreur lors de la connexion.')
       }
@@ -169,11 +166,11 @@ export default function WhatsAppPage() {
       const FB = await loadFacebookSdk(META_APP_ID, META_SDK_VERSION)
 
       if (typeof FB?.login !== 'function') {
-        throw new Error('SDK Meta chargé mais FB.login indisponible. Rechargez la page.')
+        throw new Error('SDK Meta charge mais FB.login indisponible. Rechargez la page.')
       }
 
-      // ⚠️ Le callback de FB.login DOIT être synchrone.
-      // On délègue immédiatement à handleLoginResponse via .then() pour l'async.
+      // Le callback de FB.login DOIT etre synchrone.
+      // On delegue a handleLoginResponse via .catch() pour l'async.
       FB.login(
         (response) => {
           handleLoginResponse(response).catch(err => {
@@ -200,7 +197,7 @@ export default function WhatsAppPage() {
       <div className="max-w-2xl mx-auto py-10 px-4 sm:px-6">
         <PageHeader />
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 flex items-center gap-3 text-gray-500 text-sm">
-          <Spinner /> Vérification de la session…
+          <Spinner /> Verification de la session...
         </div>
       </div>
     )
@@ -228,10 +225,10 @@ export default function WhatsAppPage() {
 
       {!isMetaConfigured && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <strong>Configuration incomplète :</strong>{' '}
+          <strong>Configuration incomplete :</strong>{' '}
           <code className="font-mono text-xs">VITE_META_APP_ID</code> et{' '}
           <code className="font-mono text-xs">VITE_META_CONFIG_ID</code> sont manquants —
-          le bouton de connexion est désactivé.
+          le bouton de connexion est desactive.
         </div>
       )}
 
@@ -240,20 +237,20 @@ export default function WhatsAppPage() {
         <div className="flex items-center gap-3 px-6 py-4">
           <WaIcon />
           <div>
-            <h2 className="text-base font-semibold text-gray-900">Numéro connecté</h2>
-            <p className="text-xs text-gray-400">Source de vérité pour l'envoi de messages WhatsApp.</p>
+            <h2 className="text-base font-semibold text-gray-900">Numero connecte</h2>
+            <p className="text-xs text-gray-400">Source de verite pour l'envoi de messages WhatsApp.</p>
           </div>
         </div>
         <div className="px-6 py-5">
           {loadingChannel ? (
-            <div className="flex items-center gap-2 text-gray-500 text-sm"><Spinner /> Chargement…</div>
+            <div className="flex items-center gap-2 text-gray-500 text-sm"><Spinner /> Chargement...</div>
           ) : channel ? (
             <ChannelCard channel={channel} />
           ) : (
             <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center">
               <WaIcon className="mx-auto mb-2 h-8 w-8 opacity-20" />
-              <p className="text-sm text-gray-500">Aucun numéro WhatsApp Business connecté.</p>
-              <p className="text-xs text-gray-400 mt-1">Cliquez sur le bouton ci-dessous pour démarrer la configuration.</p>
+              <p className="text-sm text-gray-500">Aucun numero WhatsApp Business connecte.</p>
+              <p className="text-xs text-gray-400 mt-1">Cliquez sur le bouton ci-dessous pour demarrer la configuration.</p>
             </div>
           )}
         </div>
@@ -261,24 +258,24 @@ export default function WhatsAppPage() {
 
       {error && (
         <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex gap-2 items-start">
-          <span className="mt-0.5">⚠️</span><span>{error}</span>
+          <span className="mt-0.5">&#9888;</span><span>{error}</span>
         </div>
       )}
       {success && (
         <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700 flex gap-2 items-start">
-          <span>✅</span><span>{success}</span>
+          <span>&#10003;</span><span>{success}</span>
         </div>
       )}
 
       {/* Action */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5 space-y-4">
         <h2 className="text-base font-semibold text-gray-900">
-          {channel ? 'Reconnecter / Changer de numéro' : 'Connecter WhatsApp Business'}
+          {channel ? 'Reconnecter / Changer de numero' : 'Connecter WhatsApp Business'}
         </h2>
         <p className="text-sm text-gray-500">
           {channel
-            ? "Lancez le flux Meta pour associer un nouveau numéro. L'ancien channel sera remplacé."
-            : 'Lancez le flux Meta Embedded Signup pour autoriser RestoAify à envoyer des messages en votre nom.'}
+            ? "Lancez le flux Meta pour associer un nouveau numero. L'ancien channel sera remplace."
+            : "Lancez le flux Meta Embedded Signup pour autoriser RestoAify a envoyer des messages en votre nom."}
         </p>
         <button
           type="button"
@@ -287,7 +284,7 @@ export default function WhatsAppPage() {
           className="inline-flex items-center gap-2 rounded-lg bg-[#25D366] hover:bg-[#1da851] active:bg-[#178a43] disabled:opacity-50 disabled:cursor-not-allowed px-5 py-2.5 text-sm font-semibold text-white transition-colors"
         >
           {connecting
-            ? <><Spinner className="h-4 w-4" /> Connexion en cours…</>
+            ? <><Spinner className="h-4 w-4" /> Connexion en cours...</>
             : <><WaIconSmall />{channel ? 'Reconnecter' : 'Connecter via WhatsApp'}</>
           }
         </button>
@@ -299,7 +296,7 @@ export default function WhatsAppPage() {
           <summary className="cursor-pointer font-medium text-gray-500">Debug session (dev only)</summary>
           <div className="mt-2 space-y-1 font-mono">
             <div>tenantId       : <span className="text-gray-700">{tenantId ?? 'null'}</span></div>
-            <div>token          : <span className="text-gray-700">{token ? `${token.slice(0, 20)}…` : 'null'}</span></div>
+            <div>token          : <span className="text-gray-700">{token ? `${token.slice(0, 20)}...` : 'null'}</span></div>
             <div>META_APP_ID    : <span className="text-gray-700">{META_APP_ID || 'manquant'}</span></div>
             <div>META_CONFIG_ID : <span className="text-gray-700">{META_CONFIG_ID || 'manquant'}</span></div>
           </div>
@@ -307,14 +304,14 @@ export default function WhatsAppPage() {
       )}
 
       <p className="text-xs text-gray-400 text-center">
-        L'échange OAuth se fait exclusivement de serveur à serveur.
-        Aucune clé Meta n'est exposée dans le navigateur.
+        L'echange OAuth se fait exclusivement de serveur a serveur.
+        Aucune cle Meta n'est exposee dans le navigateur.
       </p>
     </div>
   )
 }
 
-// ── Sous-composants ────────────────────────────────────────────────────────────
+// ── Sous-composants ───────────────────────────────────────────────────────────
 
 function PageHeader() {
   return (
@@ -341,11 +338,11 @@ function ChannelCard({ channel }) {
         <span className="text-sm font-semibold text-green-800">{statusLabel}</span>
       </div>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-        {channel.verified_display_name && (<><dt className="text-gray-500">Nom affiché</dt><dd className="font-medium text-gray-900">{channel.verified_display_name}</dd></>)}
-        {channel.verified_phone_number && (<><dt className="text-gray-500">Numéro</dt><dd className="font-medium text-gray-900">{channel.verified_phone_number}</dd></>)}
+        {channel.verified_display_name && (<><dt className="text-gray-500">Nom affiche</dt><dd className="font-medium text-gray-900">{channel.verified_display_name}</dd></>)}
+        {channel.verified_phone_number && (<><dt className="text-gray-500">Numero</dt><dd className="font-medium text-gray-900">{channel.verified_phone_number}</dd></>)}
         {channel.waba_id && (<><dt className="text-gray-500">WABA ID</dt><dd className="font-mono text-xs text-gray-700 break-all">{channel.waba_id}</dd></>)}
         {channel.phone_number_id && (<><dt className="text-gray-500">Phone Number ID</dt><dd className="font-mono text-xs text-gray-700 break-all">{channel.phone_number_id}</dd></>)}
-        {channel.connected_at && (<><dt className="text-gray-500">Connecté le</dt><dd className="text-gray-700">{new Date(channel.connected_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</dd></>)}
+        {channel.connected_at && (<><dt className="text-gray-500">Connecte le</dt><dd className="text-gray-700">{new Date(channel.connected_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</dd></>)}
       </dl>
     </div>
   )
