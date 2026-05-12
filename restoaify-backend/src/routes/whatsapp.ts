@@ -1,19 +1,24 @@
 /**
- * POST /whatsapp/connect
+ * WhatsApp routes
  *
- * Échange le code OAuth retourné par le flow Meta Embedded Signup contre
- * un token d'accès système, récupère les identifiants WABA + numéro,
- * puis crée ou met à jour le channel WhatsApp du tenant en base.
+ * POST /whatsapp/connect
+ *   Échange le code OAuth retourné par le flow Meta Embedded Signup contre
+ *   un token d’accès système, récupère les identifiants WABA + numéro,
+ *   puis crée ou met à jour le channel WhatsApp du tenant en base.
+ *
+ * GET /whatsapp/channel
+ *   Retourne le channel WhatsApp actif du tenant (ou null si absent).
+ *   Utilisé par le frontend pour afficher l’état de connexion dans les Settings.
  *
  * Règles multi-tenant (01-multi-tenant-architecture.md) :
  *  - tenantId obligatoire, vérifié par requireAuth + requireTenantContext.
- *  - Toute écriture s'effectue dans une transaction SET LOCAL tenant → RLS.
+ *  - Toute écriture s’effectue dans une transaction SET LOCAL tenant → RLS.
  *  - Toute action est auditée dans audit_logs.
  *
  * Sécurité :
- *  - Le META_APP_SECRET n'est jamais exposé côté frontend.
- *  - L'échange code → token s'effectue exclusivement serveur-à-serveur.
- *  - Le token long-lived retourné par Meta N'EST PAS stocké ici (v1) :
+ *  - Le META_APP_SECRET n’est jamais exposé côté frontend.
+ *  - L’échange code → token s’effectue exclusivement serveur-à-serveur.
+ *  - Le token long-lived retourné par Meta N’EST PAS stocké ici (v1) :
  *    on stocke uniquement waba_id + phone_number_id dans channels.
  *    Le token sera stocké dans un vault chiffré en v2.
  */
@@ -27,29 +32,27 @@ import { requireTenantContext } from '../middleware/requireTenantContext.js';
 
 export const whatsappRouter = new Hono();
 
-// ── Schema de validation de la requête ──────────────────────────────────────
+// ── Schema de validation de la requête connect ─────────────────────────────────
 const ConnectSchema = z.object({
   // Code OAuth retourné par FB.login() côté frontend après Embedded Signup.
   code: z.string().min(1),
-  // Identifiants récupérés depuis l'événement sessionInfoListener Meta.
+  // Identifiants récupérés depuis l’événement sessionInfoListener Meta.
   waba_id: z.string().min(1),
   phone_number_id: z.string().min(1),
   // Restaurant à lier au canal (optionnel en v1 — peut être null).
   restaurant_id: z.string().uuid().nullable().optional(),
 });
 
-// ── Helpers Meta Graph API ───────────────────────────────────────────────────
+// ── Helpers Meta Graph API ────────────────────────────────────────────────
 
 /**
- * Échange le code court contre un token d'accès utilisateur Meta.
- * On demande ensuite un token d'accès système (long-lived) si possible.
+ * Échange le code court contre un token d’accès utilisateur Meta.
  */
 async function exchangeCodeForToken(code: string): Promise<string> {
   const params = new URLSearchParams({
     client_id: env.META_APP_ID,
     client_secret: env.META_APP_SECRET,
     code,
-    // redirect_uri n'est pas requis pour Embedded Signup v2 avec config_id.
   });
 
   const res = await fetch(
@@ -67,8 +70,7 @@ async function exchangeCodeForToken(code: string): Promise<string> {
 }
 
 /**
- * Vérifie que le phone_number_id appartient bien au waba_id déclaré.
- * Évite qu'un utilisateur malveillant passe un phone_number_id arbitraire.
+ * Vérifie que le phone_number_id est accessible avec ce token.
  */
 async function verifyPhoneNumberBelongsToWaba(
   accessToken: string,
@@ -92,18 +94,14 @@ async function verifyPhoneNumberBelongsToWaba(
   if (data.error) {
     throw new Error(`Meta phone verify error: ${data.error.message}`);
   }
-  // On ne peut pas vérifier l'appartenance au WABA directement depuis
-  // ce endpoint, mais on vérifie que la ressource est accessible avec
-  // ce token (ce qui implique le consentement du propriétaire du WABA).
-  void wabaId; // sera utilisé en v2 pour une vérification stricte
+  void wabaId;
   return {
     verifiedDisplayName: data.verified_name ?? null,
     verifiedPhoneNumber: data.display_phone_number ?? null,
   };
 }
 
-// ── Route principale ─────────────────────────────────────────────────────────
-
+// ── POST /whatsapp/connect ──────────────────────────────────────────────────
 whatsappRouter.post(
   '/connect',
   requireAuth,
@@ -112,7 +110,6 @@ whatsappRouter.post(
     const auth = c.get('auth');
     const tenantId = c.get('tenantId');
 
-    // 1. Valider le body
     const body = await c.req.json().catch(() => null);
     const parsed = ConnectSchema.safeParse(body);
     if (!parsed.success) {
@@ -130,7 +127,7 @@ whatsappRouter.post(
     }
     const { code, waba_id, phone_number_id, restaurant_id } = parsed.data;
 
-    // 2. Échanger le code contre un token Meta (serveur-à-serveur)
+    // Échanger le code contre un token Meta (serveur-à-serveur)
     let accessToken: string;
     try {
       accessToken = await exchangeCodeForToken(code);
@@ -148,7 +145,7 @@ whatsappRouter.post(
       );
     }
 
-    // 3. Vérifier que le phone_number_id est accessible avec ce token
+    // Vérifier que le phone_number_id est accessible avec ce token
     let verifiedDisplayName: string | null = null;
     let verifiedPhoneNumber: string | null = null;
     try {
@@ -171,14 +168,12 @@ whatsappRouter.post(
       );
     }
 
-    // 4. Upsert du channel WhatsApp en base dans une transaction RLS
+    // Upsert du channel WhatsApp en base dans une transaction RLS
     let channel: Record<string, unknown>;
     try {
       const rows = await sql.begin(async (tx) => {
-        // Activer le contexte tenant pour RLS
         await tx`SELECT set_config('app.current_tenant', ${tenantId}, true)`;
 
-        // Chercher un channel WhatsApp existant pour ce tenant
         const existing = await tx<Array<{ id: string }>>`
           SELECT id FROM channels
           WHERE tenant_id = ${tenantId}
@@ -191,7 +186,6 @@ whatsappRouter.post(
         let ch: Record<string, unknown>;
 
         if (existing.length > 0) {
-          // Mettre à jour le channel existant
           const [updated] = await tx<Array<Record<string, unknown>>>`
             UPDATE channels SET
               external_channel_id = ${phone_number_id},
@@ -212,7 +206,6 @@ whatsappRouter.post(
           `;
           ch = updated;
         } else {
-          // Créer un nouveau channel
           const [created] = await tx<Array<Record<string, unknown>>>`
             INSERT INTO channels (
               tenant_id, restaurant_id, channel_type, provider,
@@ -242,7 +235,7 @@ whatsappRouter.post(
           ch = created;
         }
 
-        // Audit log (règle 01/07 : toute action métier importante est tracée)
+        // Audit log (règle 01/07)
         await tx`
           INSERT INTO audit_logs (
             tenant_id, event_type, module_code, tool_code,
@@ -291,7 +284,6 @@ whatsappRouter.post(
       );
     }
 
-    // 5. Retourner le channel créé/mis à jour (sans le token Meta)
     return c.json({
       success: true,
       data: {
@@ -303,5 +295,78 @@ whatsappRouter.post(
         status: 'active',
       },
     });
+  },
+);
+
+// ── GET /whatsapp/channel ───────────────────────────────────────────────────
+whatsappRouter.get(
+  '/channel',
+  requireAuth,
+  requireTenantContext,
+  async (c) => {
+    const tenantId = c.get('tenantId');
+
+    try {
+      await sql`SELECT set_config('app.current_tenant', ${tenantId}, true)`;
+
+      const rows = await sql<
+        Array<{
+          id: string;
+          status: string;
+          external_channel_id: string;
+          restaurant_id: string | null;
+          meta: Record<string, unknown>;
+          created_at: string;
+          updated_at: string;
+        }>
+      >`
+        SELECT
+          id,
+          status,
+          external_channel_id,
+          restaurant_id,
+          meta,
+          created_at,
+          updated_at
+        FROM channels
+        WHERE tenant_id   = ${tenantId}
+          AND channel_type = 'whatsapp'
+          AND provider     = 'meta'
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `;
+
+      if (rows.length === 0) {
+        return c.json({ success: true, data: null });
+      }
+
+      const ch = rows[0];
+      return c.json({
+        success: true,
+        data: {
+          channel_id:             ch.id,
+          status:                 ch.status,
+          phone_number_id:        ch.external_channel_id,
+          restaurant_id:          ch.restaurant_id,
+          waba_id:                (ch.meta?.waba_id as string) ?? null,
+          verified_display_name:  (ch.meta?.verified_display_name as string) ?? null,
+          verified_phone_number:  (ch.meta?.verified_phone_number as string) ?? null,
+          connected_at:           (ch.meta?.connected_at as string) ?? ch.created_at,
+          updated_at:             ch.updated_at,
+        },
+      });
+    } catch (err) {
+      console.error('[whatsapp/channel] db error:', err);
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'DB_ERROR',
+            message: err instanceof Error ? err.message : 'Database error',
+          },
+        },
+        500,
+      );
+    }
   },
 );
