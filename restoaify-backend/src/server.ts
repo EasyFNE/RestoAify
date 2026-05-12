@@ -9,6 +9,7 @@ import { executeTool } from './lib/wrapTool.js';
 import { requireAuth } from './middleware/requireAuth.js';
 import { requireTenantContext } from './middleware/requireTenantContext.js';
 import { getTool, listToolCodes } from './tools/registry.js';
+import { whatsappRouter } from './routes/whatsapp.js';
 
 const app = new Hono();
 
@@ -37,6 +38,9 @@ app.get('/health', async (c) => {
 app.get('/tools', requireAuth, requireTenantContext, (c) => {
   return c.json({ tools: listToolCodes() });
 });
+
+// ── WhatsApp Embedded Signup ────────────────────────────────────────────────
+app.route('/whatsapp', whatsappRouter);
 
 // ── Tool execution endpoint ────────────────────────────────────────────────
 const ExecuteSchema = z.object({
@@ -107,10 +111,6 @@ app.post('/tools/execute', requireAuth, requireTenantContext, async (c) => {
     req.input,
   );
 
-  // HTTP status reflects gross outcome:
-  //   - success=true  → 200
-  //   - success=false → 200 too (business failures aren't HTTP errors)
-  // Only auth/validation/routing failures return 4xx.
   return c.json(envelope, 200);
 });
 
@@ -134,6 +134,7 @@ app.onError((err, c) => {
 serve({ fetch: app.fetch, port: env.PORT }, ({ port }) => {
   console.log(`▶ RestoAify backend listening on http://localhost:${port}`);
   console.log(`  health    GET  /health`);
-  console.log(`  tools     GET  /tools           (auth + X-Tenant-Id)`);
-  console.log(`  execute   POST /tools/execute   (auth + X-Tenant-Id)`);
+  console.log(`  tools     GET  /tools                (auth + X-Tenant-Id)`);
+  console.log(`  execute   POST /tools/execute         (auth + X-Tenant-Id)`);
+  console.log(`  whatsapp  POST /whatsapp/connect       (auth + X-Tenant-Id)`);
 });
