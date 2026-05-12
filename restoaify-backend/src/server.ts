@@ -18,9 +18,10 @@ if (env.CORS_ORIGINS.length > 0) {
   app.use(
     '*',
     cors({
-      origin: env.CORS_ORIGINS,
+      origin: (origin) => (env.CORS_ORIGINS.includes(origin) ? origin : null),
       allowHeaders: ['Authorization', 'Content-Type', 'X-Tenant-Id', 'X-Correlation-Id'],
-      allowMethods: ['GET', 'POST', 'OPTIONS'],
+      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      credentials: true,
     }),
   );
 }
