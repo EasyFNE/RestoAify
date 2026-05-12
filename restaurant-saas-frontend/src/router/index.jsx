@@ -27,6 +27,7 @@ import ModulesPage from '../pages/tenant/ModulesPage.jsx'
 import SettingsPage from '../pages/tenant/SettingsPage.jsx'
 import AuditPage from '../pages/tenant/AuditPage.jsx'
 import BillingPage from '../pages/tenant/BillingPage.jsx'
+import WhatsAppPage from '../pages/tenant/WhatsAppPage.jsx'
 
 // Operations pages (v1)
 import ConversationsPage from '../pages/tenant/ConversationsPage.jsx'
@@ -107,12 +108,14 @@ export default function AppRouter() {
         <Route path="/app/orders"              element={<OrdersPage />} />
         <Route path="/app/orders/:id"          element={<OrderDetailPage />} />
 
+        {/* Intégrations — actives */}
+        <Route path="/app/whatsapp" element={<WhatsAppPage />} />
+
         {/* Coming soon */}
         <Route path="/app/reservations"  element={<ComingSoonPage moduleKey="reservations" />} />
         <Route path="/app/catering"      element={<ComingSoonPage moduleKey="catering" />} />
         <Route path="/app/healthy"       element={<ComingSoonPage moduleKey="healthy" />} />
         <Route path="/app/channels"      element={<ComingSoonPage moduleKey="channels" />} />
-        <Route path="/app/whatsapp"      element={<ComingSoonPage moduleKey="whatsapp" />} />
         <Route path="/app/integrations"  element={<ComingSoonPage moduleKey="integrations" />} />
       </Route>
 
