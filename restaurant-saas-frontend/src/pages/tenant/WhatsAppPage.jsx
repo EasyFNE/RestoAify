@@ -3,9 +3,11 @@
  *
  * Page Intégrations > WhatsApp — configuration complète.
  *
- * Fix 1 : lit currentUser.tenantId (camelCase) et non tenant_id
- * Fix 2 : récupère le token via supabase.auth.getSession() car
- *          AuthContext n'expose pas `session`
+ * Fix 1 : lit currentUser.tenantId (camelCase)
+ * Fix 2 : token via supabase.auth.getSession()
+ * Fix 3 : FB.event.subscribe n'existe plus dans le SDK Meta moderne.
+ *          On utilise window.addEventListener('message') pour recevoir
+ *          les données WABA (waba_id, phone_number_id) via postMessage.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -13,17 +15,21 @@ import { useAuth } from '../../hooks/useAuth.js'
 import { supabase } from '../../services/supabaseClient.js'
 import { backendApi } from '../../services/backendApi.js'
 
-// ── Constantes Meta ────────────────────────────────────────────────────────────
 const META_APP_ID      = import.meta.env.VITE_META_APP_ID    || ''
 const META_CONFIG_ID   = import.meta.env.VITE_META_CONFIG_ID || ''
 const META_SDK_VERSION = 'v21.0'
 
-// ── Chargement SDK Meta (une seule fois) ───────────────────────────────────────
+// ── Chargement SDK Meta (une seule fois) ──────────────────────────────────────
 function loadFacebookSdk(appId, version) {
   return new Promise((resolve, reject) => {
     if (window.FB) { resolve(window.FB); return }
     window.fbAsyncInit = function () {
-      window.FB.init({ appId, autoLogAppEvents: true, xfbml: true, version })
+      window.FB.init({
+        appId,
+        autoLogAppEvents: true,
+        xfbml: true,
+        version,
+      })
       resolve(window.FB)
     }
     const script = document.createElement('script')
@@ -38,36 +44,31 @@ function loadFacebookSdk(appId, version) {
 // ── Composant principal ────────────────────────────────────────────────────────
 export default function WhatsAppPage() {
   const { currentUser } = useAuth()
-
-  // Fix 1 : tenantId est en camelCase dans AuthContext
   const tenantId = currentUser?.tenantId ?? null
 
-  // Fix 2 : token via supabase.auth.getSession()
   const [token, setToken]           = useState(null)
   const [tokenReady, setTokenReady] = useState(false)
 
-  const [channel, setChannel]             = useState(null)
+  const [channel, setChannel]               = useState(null)
   const [loadingChannel, setLoadingChannel] = useState(false)
-  const [connecting, setConnecting]       = useState(false)
-  const [error, setError]                 = useState(null)
-  const [success, setSuccess]             = useState(null)
+  const [connecting, setConnecting]         = useState(false)
+  const [error, setError]                   = useState(null)
+  const [success, setSuccess]               = useState(null)
 
+  // sessionInfo reçu via postMessage depuis la popup Meta
   const sessionInfoRef = useRef(null)
+  // callback FB.login mis en ref pour accès dans le listener
+  const loginCallbackRef = useRef(null)
 
   // ── Résoudre le token Supabase ─────────────────────────────────────────────
   useEffect(() => {
     async function resolveToken() {
-      if (!supabase) {
-        // Mode mock : pas de supabase, placeholder non-null
-        setToken('mock-token')
-        setTokenReady(true)
-        return
-      }
+      if (!supabase) { setToken('mock-token'); setTokenReady(true); return }
       try {
         const { data: { session } } = await supabase.auth.getSession()
         setToken(session?.access_token ?? null)
       } catch (e) {
-        console.error('[WhatsAppPage] getSession error:', e)
+        console.error('[WhatsAppPage] getSession:', e)
         setToken(null)
       } finally {
         setTokenReady(true)
@@ -76,20 +77,49 @@ export default function WhatsAppPage() {
     resolveToken()
   }, [])
 
-  // ── Charger le channel existant dès que token + tenantId sont prêts ────────
+  // ── Charger le channel dès que token + tenantId prêts ─────────────────────────
   useEffect(() => {
-    if (!tokenReady || !token || !tenantId) {
-      setLoadingChannel(false)
-      return
-    }
+    if (!tokenReady || !token || !tenantId) { setLoadingChannel(false); return }
     setLoadingChannel(true)
     backendApi.getWhatsAppChannel(token, tenantId)
-      .then((res) => setChannel(res.data ?? null))
-      .catch((err) => console.warn('[WhatsAppPage] getWhatsAppChannel:', err.message))
+      .then(res => setChannel(res.data ?? null))
+      .catch(err => console.warn('[WhatsAppPage] getWhatsAppChannel:', err.message))
       .finally(() => setLoadingChannel(false))
   }, [tokenReady, token, tenantId])
 
   const isMetaConfigured = Boolean(META_APP_ID && META_CONFIG_ID)
+
+  // ── Listener postMessage Meta (sessionInfo) ─────────────────────────────────
+  // Meta envoie les données WABA (waba_id, phone_number_id) via window.postMessage
+  // depuis la popup Embedded Signup. On écoute ici et on stocke dans sessionInfoRef.
+  useEffect(() => {
+    function onMessage(event) {
+      // Sécurité : on n'accepte que les messages depuis facebook.com
+      if (!event.origin.includes('facebook.com')) return
+
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
+        // Le message sessionInfo de Meta contient waba_id et phone_number_id
+        if (data?.type === 'WA_EMBEDDED_SIGNUP' && data?.event === 'FINISH') {
+          const info = data?.data ?? {}
+          if (info.waba_id || info.phone_number_id) {
+            sessionInfoRef.current = info
+            console.debug('[WhatsApp] sessionInfo reçu:', info)
+          }
+        }
+        // Certaines versions envoient directement waba_id au top level
+        if (data?.waba_id && data?.phone_number_id) {
+          sessionInfoRef.current = data
+          console.debug('[WhatsApp] sessionInfo (direct) reçu:', data)
+        }
+      } catch (_) {
+        // message non-JSON, on ignore
+      }
+    }
+
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
 
   // ── Embedded Signup ─────────────────────────────────────────────────────────
   async function handleConnect() {
@@ -101,9 +131,10 @@ export default function WhatsAppPage() {
     try {
       const FB = await loadFacebookSdk(META_APP_ID, META_SDK_VERSION)
 
-      FB.event.subscribe('WhatsAppEmbeddedSignup.sessionInfo', (data) => {
-        sessionInfoRef.current = data
-      })
+      // Vérification que FB.login est bien disponible
+      if (typeof FB?.login !== 'function') {
+        throw new Error('SDK Meta chargé mais FB.login non disponible. Rechargez la page.')
+      }
 
       FB.login(
         async (response) => {
@@ -113,11 +144,18 @@ export default function WhatsAppPage() {
             return
           }
 
-          const code        = response.authResponse.code
+          const code = response.authResponse.code
+
+          // On attend jusqu'à 250 ms que le postMessage sessionInfo arrive
+          // (il est envoyé juste avant ou juste après le callback FB.login)
+          await new Promise(r => setTimeout(r, 250))
           const sessionInfo = sessionInfoRef.current
 
           if (!sessionInfo?.waba_id || !sessionInfo?.phone_number_id) {
-            setError('Informations WABA manquantes. Veuillez réessayer en complétant toutes les étapes.')
+            setError(
+              'Informations WABA manquantes (waba_id / phone_number_id). ' +
+              'Vérifiez que vous avez bien complété toutes les étapes du flux Meta et réessayez.'
+            )
             setConnecting(false)
             return
           }
@@ -158,13 +196,12 @@ export default function WhatsAppPage() {
         },
       )
     } catch (err) {
-      setError(err.message || "Impossible d'initialiser Meta SDK.")
+      setError(err.message || "Impossible d'initialiser le SDK Meta.")
       setConnecting(false)
     }
   }
 
   // ── Rendu ───────────────────────────────────────────────────────────────────
-
   if (!tokenReady) {
     return (
       <div className="max-w-2xl mx-auto py-10 px-4 sm:px-6">
@@ -196,13 +233,12 @@ export default function WhatsAppPage() {
     <div className="max-w-2xl mx-auto py-10 px-4 sm:px-6 space-y-6">
       <PageHeader />
 
-      {/* Alerte config Meta manquante */}
       {!isMetaConfigured && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <strong>Configuration incomplète :</strong>{' '}
           <code className="font-mono text-xs">VITE_META_APP_ID</code> et{' '}
-          <code className="font-mono text-xs">VITE_META_CONFIG_ID</code> sont manquants.
-          Le bouton de connexion est désactivé tant qu'ils ne sont pas définis dans le .env.
+          <code className="font-mono text-xs">VITE_META_CONFIG_ID</code> sont manquants —
+          le bouton de connexion est désactivé.
         </div>
       )}
 
@@ -230,7 +266,6 @@ export default function WhatsAppPage() {
         </div>
       </div>
 
-      {/* Feedback */}
       {error && (
         <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex gap-2 items-start">
           <span className="mt-0.5">⚠️</span><span>{error}</span>
@@ -260,7 +295,7 @@ export default function WhatsAppPage() {
         >
           {connecting
             ? <><Spinner className="h-4 w-4" /> Connexion en cours…</>
-            : <><WaIconSmall /> {channel ? 'Reconnecter' : 'Connecter via WhatsApp'}</>
+            : <><WaIconSmall />{channel ? 'Reconnecter' : 'Connecter via WhatsApp'}</>
           }
         </button>
         {!isMetaConfigured && (
@@ -270,7 +305,7 @@ export default function WhatsAppPage() {
         )}
       </div>
 
-      {/* Panel debug (dev only) */}
+      {/* Panel debug dev only */}
       {import.meta.env.DEV && (
         <details className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-lg px-4 py-3">
           <summary className="cursor-pointer font-medium text-gray-500">Debug session (dev only)</summary>
@@ -309,9 +344,8 @@ function ChannelCard({ channel }) {
     channel.status === 'active'  ? 'bg-green-500' :
     channel.status === 'pending' ? 'bg-amber-400'  : 'bg-gray-400'
   const statusLabel =
-    channel.status === 'active'  ? 'Actif'       :
-    channel.status === 'pending' ? 'En attente'  : (channel.status ?? 'Inconnu')
-
+    channel.status === 'active'  ? 'Actif'      :
+    channel.status === 'pending' ? 'En attente' : (channel.status ?? 'Inconnu')
   return (
     <div className="rounded-xl border border-green-200 bg-green-50 p-4 space-y-3">
       <div className="flex items-center gap-2">
@@ -319,21 +353,11 @@ function ChannelCard({ channel }) {
         <span className="text-sm font-semibold text-green-800">{statusLabel}</span>
       </div>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-        {channel.verified_display_name && (
-          <><dt className="text-gray-500">Nom affiché</dt><dd className="font-medium text-gray-900">{channel.verified_display_name}</dd></>
-        )}
-        {channel.verified_phone_number && (
-          <><dt className="text-gray-500">Numéro</dt><dd className="font-medium text-gray-900">{channel.verified_phone_number}</dd></>
-        )}
-        {channel.waba_id && (
-          <><dt className="text-gray-500">WABA ID</dt><dd className="font-mono text-xs text-gray-700 break-all">{channel.waba_id}</dd></>
-        )}
-        {channel.phone_number_id && (
-          <><dt className="text-gray-500">Phone Number ID</dt><dd className="font-mono text-xs text-gray-700 break-all">{channel.phone_number_id}</dd></>
-        )}
-        {channel.connected_at && (
-          <><dt className="text-gray-500">Connecté le</dt><dd className="text-gray-700">{new Date(channel.connected_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</dd></>
-        )}
+        {channel.verified_display_name && (<><dt className="text-gray-500">Nom affiché</dt><dd className="font-medium text-gray-900">{channel.verified_display_name}</dd></>)}
+        {channel.verified_phone_number && (<><dt className="text-gray-500">Numéro</dt><dd className="font-medium text-gray-900">{channel.verified_phone_number}</dd></>)}
+        {channel.waba_id && (<><dt className="text-gray-500">WABA ID</dt><dd className="font-mono text-xs text-gray-700 break-all">{channel.waba_id}</dd></>)}
+        {channel.phone_number_id && (<><dt className="text-gray-500">Phone Number ID</dt><dd className="font-mono text-xs text-gray-700 break-all">{channel.phone_number_id}</dd></>)}
+        {channel.connected_at && (<><dt className="text-gray-500">Connecté le</dt><dd className="text-gray-700">{new Date(channel.connected_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</dd></>)}
       </dl>
     </div>
   )
@@ -359,7 +383,7 @@ function WaIcon({ className = 'h-8 w-8' }) {
 
 function WaIconSmall() {
   return (
-    <svg viewBox="0 0 32 32" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+    <svg viewBox="0 0 32 32" className="h-4 w-4 mr-1" fill="currentColor" aria-hidden="true">
       <path d="M16 7.5a8.5 8.5 0 00-7.41 12.68L7.5 24.5l4.46-1.06A8.5 8.5 0 1016 7.5z" />
     </svg>
   )
