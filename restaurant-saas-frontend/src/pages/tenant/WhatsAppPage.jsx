@@ -1,13 +1,11 @@
 /**
  * WhatsAppPage.jsx
  *
- * Page Intégrations > WhatsApp — configuration complète.
- *
- * Fix 1 : lit currentUser.tenantId (camelCase)
+ * Fix 1 : currentUser.tenantId (camelCase)
  * Fix 2 : token via supabase.auth.getSession()
- * Fix 3 : FB.event.subscribe n'existe plus dans le SDK Meta moderne.
- *          On utilise window.addEventListener('message') pour recevoir
- *          les données WABA (waba_id, phone_number_id) via postMessage.
+ * Fix 3 : FB.event.subscribe → window.addEventListener('message')
+ * Fix 4 : FB.login n'accepte qu'un callback SYNCHRONE — la logique async
+ *          est extraite dans handleLoginResponse() appelée via .then()
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -24,12 +22,7 @@ function loadFacebookSdk(appId, version) {
   return new Promise((resolve, reject) => {
     if (window.FB) { resolve(window.FB); return }
     window.fbAsyncInit = function () {
-      window.FB.init({
-        appId,
-        autoLogAppEvents: true,
-        xfbml: true,
-        version,
-      })
+      window.FB.init({ appId, autoLogAppEvents: true, xfbml: true, version })
       resolve(window.FB)
     }
     const script = document.createElement('script')
@@ -55,10 +48,8 @@ export default function WhatsAppPage() {
   const [error, setError]                   = useState(null)
   const [success, setSuccess]               = useState(null)
 
-  // sessionInfo reçu via postMessage depuis la popup Meta
+  // Données WABA reçues via postMessage de la popup Meta
   const sessionInfoRef = useRef(null)
-  // callback FB.login mis en ref pour accès dans le listener
-  const loginCallbackRef = useRef(null)
 
   // ── Résoudre le token Supabase ─────────────────────────────────────────────
   useEffect(() => {
@@ -77,7 +68,7 @@ export default function WhatsAppPage() {
     resolveToken()
   }, [])
 
-  // ── Charger le channel dès que token + tenantId prêts ─────────────────────────
+  // ── Charger le channel existant ────────────────────────────────────────────
   useEffect(() => {
     if (!tokenReady || !token || !tenantId) { setLoadingChannel(false); return }
     setLoadingChannel(true)
@@ -89,39 +80,85 @@ export default function WhatsAppPage() {
 
   const isMetaConfigured = Boolean(META_APP_ID && META_CONFIG_ID)
 
-  // ── Listener postMessage Meta (sessionInfo) ─────────────────────────────────
-  // Meta envoie les données WABA (waba_id, phone_number_id) via window.postMessage
-  // depuis la popup Embedded Signup. On écoute ici et on stocke dans sessionInfoRef.
+  // ── Listener postMessage Meta ──────────────────────────────────────────────
+  // Meta envoie waba_id + phone_number_id via postMessage depuis la popup.
   useEffect(() => {
     function onMessage(event) {
-      // Sécurité : on n'accepte que les messages depuis facebook.com
       if (!event.origin.includes('facebook.com')) return
-
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
-        // Le message sessionInfo de Meta contient waba_id et phone_number_id
         if (data?.type === 'WA_EMBEDDED_SIGNUP' && data?.event === 'FINISH') {
           const info = data?.data ?? {}
           if (info.waba_id || info.phone_number_id) {
             sessionInfoRef.current = info
-            console.debug('[WhatsApp] sessionInfo reçu:', info)
+            console.debug('[WhatsApp] sessionInfo reçu (WA_EMBEDDED_SIGNUP):', info)
           }
         }
-        // Certaines versions envoient directement waba_id au top level
+        // Certaines versions Meta envoient waba_id au top level
         if (data?.waba_id && data?.phone_number_id) {
           sessionInfoRef.current = data
-          console.debug('[WhatsApp] sessionInfo (direct) reçu:', data)
+          console.debug('[WhatsApp] sessionInfo reçu (direct):', data)
         }
-      } catch (_) {
-        // message non-JSON, on ignore
-      }
+      } catch (_) { /* message non-JSON, ignoré */ }
     }
-
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
   }, [])
 
-  // ── Embedded Signup ─────────────────────────────────────────────────────────
+  // ── Traitement async APRÈS le callback FB.login ────────────────────────────
+  // Séparé car FB.login n'accepte QUE des callbacks synchrones.
+  async function handleLoginResponse(response) {
+    if (response.status !== 'connected' || !response.authResponse?.code) {
+      setError('Connexion annulée ou refusée par Meta.')
+      setConnecting(false)
+      return
+    }
+
+    const code = response.authResponse.code
+
+    // Attendre jusqu'à 500 ms que le postMessage sessionInfo arrive
+    await new Promise(r => setTimeout(r, 500))
+    const sessionInfo = sessionInfoRef.current
+
+    if (!sessionInfo?.waba_id || !sessionInfo?.phone_number_id) {
+      setError(
+        'Informations WABA manquantes (waba_id / phone_number_id). ' +
+        'Assurez-vous d'avoir complété toutes les étapes du flux Meta.'
+      )
+      setConnecting(false)
+      return
+    }
+
+    try {
+      const res = await backendApi.connectWhatsApp(token, tenantId, {
+        code,
+        waba_id:         sessionInfo.waba_id,
+        phone_number_id: sessionInfo.phone_number_id,
+        restaurant_id:   null,
+      })
+
+      if (res.success) {
+        setChannel({
+          channel_id:            res.data.channel_id,
+          status:                res.data.status,
+          phone_number_id:       res.data.phone_number_id,
+          waba_id:               res.data.waba_id,
+          verified_display_name: res.data.verified_display_name,
+          verified_phone_number: res.data.verified_phone_number,
+          connected_at:          new Date().toISOString(),
+        })
+        setSuccess('Numéro WhatsApp Business connecté avec succès !')
+      } else {
+        setError(res.error?.message || 'Erreur lors de la connexion.')
+      }
+    } catch (err) {
+      setError(err.message || 'Erreur serveur lors de la connexion.')
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  // ── Lancement Embedded Signup ──────────────────────────────────────────────
   async function handleConnect() {
     setError(null)
     setSuccess(null)
@@ -131,62 +168,18 @@ export default function WhatsAppPage() {
     try {
       const FB = await loadFacebookSdk(META_APP_ID, META_SDK_VERSION)
 
-      // Vérification que FB.login est bien disponible
       if (typeof FB?.login !== 'function') {
-        throw new Error('SDK Meta chargé mais FB.login non disponible. Rechargez la page.')
+        throw new Error('SDK Meta chargé mais FB.login indisponible. Rechargez la page.')
       }
 
+      // ⚠️ Le callback de FB.login DOIT être synchrone.
+      // On délègue immédiatement à handleLoginResponse via .then() pour l'async.
       FB.login(
-        async (response) => {
-          if (response.status !== 'connected' || !response.authResponse?.code) {
-            setError('Connexion annulée ou refusée par Meta.')
+        (response) => {
+          handleLoginResponse(response).catch(err => {
+            setError(err.message || 'Erreur inattendue.')
             setConnecting(false)
-            return
-          }
-
-          const code = response.authResponse.code
-
-          // On attend jusqu'à 250 ms que le postMessage sessionInfo arrive
-          // (il est envoyé juste avant ou juste après le callback FB.login)
-          await new Promise(r => setTimeout(r, 250))
-          const sessionInfo = sessionInfoRef.current
-
-          if (!sessionInfo?.waba_id || !sessionInfo?.phone_number_id) {
-            setError(
-              'Informations WABA manquantes (waba_id / phone_number_id). ' +
-              'Vérifiez que vous avez bien complété toutes les étapes du flux Meta et réessayez.'
-            )
-            setConnecting(false)
-            return
-          }
-
-          try {
-            const res = await backendApi.connectWhatsApp(token, tenantId, {
-              code,
-              waba_id:         sessionInfo.waba_id,
-              phone_number_id: sessionInfo.phone_number_id,
-              restaurant_id:   null,
-            })
-
-            if (res.success) {
-              setChannel({
-                channel_id:            res.data.channel_id,
-                status:                res.data.status,
-                phone_number_id:       res.data.phone_number_id,
-                waba_id:               res.data.waba_id,
-                verified_display_name: res.data.verified_display_name,
-                verified_phone_number: res.data.verified_phone_number,
-                connected_at:          new Date().toISOString(),
-              })
-              setSuccess('Numéro WhatsApp Business connecté avec succès !')
-            } else {
-              setError(res.error?.message || 'Erreur lors de la connexion.')
-            }
-          } catch (err) {
-            setError(err.message || 'Erreur serveur lors de la connexion.')
-          } finally {
-            setConnecting(false)
-          }
+          })
         },
         {
           config_id: META_CONFIG_ID,
@@ -201,7 +194,7 @@ export default function WhatsAppPage() {
     }
   }
 
-  // ── Rendu ───────────────────────────────────────────────────────────────────
+  // ── Rendu ──────────────────────────────────────────────────────────────────
   if (!tokenReady) {
     return (
       <div className="max-w-2xl mx-auto py-10 px-4 sm:px-6">
@@ -221,7 +214,7 @@ export default function WhatsAppPage() {
           <p className="text-sm text-red-600 font-medium">Session invalide ou tenant introuvable.</p>
           <p className="text-xs text-gray-400">
             {!token && <span>Token absent. </span>}
-            {!tenantId && <span>tenantId absent (currentUser.tenantId = null). </span>}
+            {!tenantId && <span>tenantId absent. </span>}
             Veuillez vous reconnecter.
           </p>
         </div>
@@ -277,7 +270,7 @@ export default function WhatsAppPage() {
         </div>
       )}
 
-      {/* Actions */}
+      {/* Action */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5 space-y-4">
         <h2 className="text-base font-semibold text-gray-900">
           {channel ? 'Reconnecter / Changer de numéro' : 'Connecter WhatsApp Business'}
@@ -298,11 +291,6 @@ export default function WhatsAppPage() {
             : <><WaIconSmall />{channel ? 'Reconnecter' : 'Connecter via WhatsApp'}</>
           }
         </button>
-        {!isMetaConfigured && (
-          <p className="text-xs text-amber-600">
-            Bouton désactivé — <code>VITE_META_APP_ID</code> / <code>VITE_META_CONFIG_ID</code> manquants.
-          </p>
-        )}
       </div>
 
       {/* Panel debug dev only */}
@@ -310,9 +298,9 @@ export default function WhatsAppPage() {
         <details className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-lg px-4 py-3">
           <summary className="cursor-pointer font-medium text-gray-500">Debug session (dev only)</summary>
           <div className="mt-2 space-y-1 font-mono">
-            <div>tenantId : <span className="text-gray-700">{tenantId ?? 'null'}</span></div>
-            <div>token    : <span className="text-gray-700">{token ? `${token.slice(0, 20)}…` : 'null'}</span></div>
-            <div>META_APP_ID : <span className="text-gray-700">{META_APP_ID || 'manquant'}</span></div>
+            <div>tenantId       : <span className="text-gray-700">{tenantId ?? 'null'}</span></div>
+            <div>token          : <span className="text-gray-700">{token ? `${token.slice(0, 20)}…` : 'null'}</span></div>
+            <div>META_APP_ID    : <span className="text-gray-700">{META_APP_ID || 'manquant'}</span></div>
             <div>META_CONFIG_ID : <span className="text-gray-700">{META_CONFIG_ID || 'manquant'}</span></div>
           </div>
         </details>
@@ -383,7 +371,7 @@ function WaIcon({ className = 'h-8 w-8' }) {
 
 function WaIconSmall() {
   return (
-    <svg viewBox="0 0 32 32" className="h-4 w-4 mr-1" fill="currentColor" aria-hidden="true">
+    <svg viewBox="0 0 32 32" className="h-4 w-4" fill="currentColor" aria-hidden="true">
       <path d="M16 7.5a8.5 8.5 0 00-7.41 12.68L7.5 24.5l4.46-1.06A8.5 8.5 0 1016 7.5z" />
     </svg>
   )
